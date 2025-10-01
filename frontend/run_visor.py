@@ -80,6 +80,7 @@ status_sel = st.sidebar.multiselect(
 
 # --- Aplicar filtros ---
 df_filtrado = fulldf.copy()
+df_filtrado["score_total"] = df_filtrado.get("score_total", -1) # asegurar columna score_total // para que no truene la viz si hay vacantes sin score.
 df_filtrado = df_filtrado[df_filtrado['score_total'] >= score_min]
 #df_filtrado = df_filtrado[df_filtrado['modalidad_trabajo'].isin(modalidad_filtro)]
 df_filtrado = filtrar_con_keywords(df_filtrado, 'location', filtro_lugar)
