@@ -4,7 +4,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 from datetime import datetime, date
-from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run
+from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run, init_db
 import zoneinfo
 import logging
 import os
@@ -114,6 +114,8 @@ if __name__ == "__main__":
 
     
     count=0
+
+    init_db()
 
     with tqdm(total=total_loops, desc="Scraping jobs") as pbar:
         for role in roles:
