@@ -4,11 +4,25 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import matplotlib.pyplot as plt
+from pathlib import Path
 import os
 
-# --- Configuración ---
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "data", "vacantes.db")
+# 1. Punto de partida: carpeta donde está este script
+BASE_DIR = Path(__file__).resolve().parent
+
+# 2. Busca una carpeta llamada "data" o "l_data" en niveles relevantes
+candidates = [
+    BASE_DIR / "data",           # caso Docker
+    BASE_DIR.parent / "data",    # caso local si hay carpeta "data" arriba
+    BASE_DIR.parent / "l_data",  # caso local con tu layout actual
+]
+
+DATA_DIR = next((p for p in candidates if p.exists()), None)
+if DATA_DIR is None:
+    raise FileNotFoundError("No se encontró carpeta data/l_data en ninguna ruta candidata.")
+
+# 3. Rutas absolutas que siempre serán BASE/DATA/...
+DB_PATH = DATA_DIR / "vacantes.db"
 
 # --- Cargar datos ---
 @st.cache_data(ttl=60)

@@ -8,17 +8,36 @@ from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run
 import zoneinfo
 import logging
 import os
+from pathlib import Path
 import yaml
 
 # --- Configuración ---
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "data", "vacantes.db")
-CONFIG_PATH = os.path.join(BASE_DIR,"data","config_scraper.yaml")
+# 1. Punto de partida: carpeta donde está este script
+BASE_DIR = Path(__file__).resolve().parent
+
+# 2. Busca una carpeta llamada "data" o "l_data" en niveles relevantes
+candidates = [
+    BASE_DIR / "data",           # caso Docker
+    BASE_DIR.parent / "data",    # caso local si hay carpeta "data" arriba
+    BASE_DIR.parent / "l_data",  # caso local con tu layout actual
+]
+
+DATA_DIR = next((p for p in candidates if p.exists()), None)
+if DATA_DIR is None:
+    raise FileNotFoundError("No se encontró carpeta data/l_data en ninguna ruta candidata.")
+
+# 3. Rutas absolutas que siempre serán BASE/DATA/...
+DB_PATH = DATA_DIR / "vacantes.db"
+CONFIG_PATH = DATA_DIR / "config_scraper.yaml"
+
 MX = zoneinfo.ZoneInfo("America/Monterrey")
 
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
+
+print(f"[SCRAPER] DATA_DIR={DATA_DIR}")
+print(f"[SCRAPER] DB_PATH={DB_PATH}")
 
 roles = config["roles"]
 functions = config["functions"]
