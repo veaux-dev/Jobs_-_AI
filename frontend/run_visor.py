@@ -4,9 +4,11 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import matplotlib.pyplot as plt
+import os
 
 # --- Configuración ---
-DB_PATH = "vacantes.db"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "data", "vacantes.db")
 
 # --- Cargar datos ---
 @st.cache_data(ttl=60)
@@ -130,7 +132,7 @@ with col_chart:
         ax.set_ylabel("")
         ax.tick_params(axis="x", labelrotation=45)
         ax.grid(False)
-        st.pyplot(fig, use_container_width=True)
+        st.pyplot(fig, use_container_width=False)
 
 def formatear_link(url):
     if not url:
