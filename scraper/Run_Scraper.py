@@ -130,4 +130,4 @@ if __name__ == "__main__":
                     time.sleep(random.randint(3, 6))
                     pbar.update(1)
 
-    # finalize_scrape_run()
+    finalize_scrape_run()
