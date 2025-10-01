@@ -24,10 +24,20 @@ if DATA_DIR is None:
 # 3. Rutas absolutas que siempre serán BASE/DATA/...
 DB_PATH = DATA_DIR / "vacantes.db"
 
+def _get_conn():
+    if DB_PATH is None:
+        raise RuntimeError("DB_PATH not set. Call set_db_path() first.")
+    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn.execute("PRAGMA journal_mode=WAL;")      # mejor concurrencia
+    conn.execute("PRAGMA synchronous = NORMAL;")  # balance seguro/rendimiento
+    conn.execute("PRAGMA foreign_keys = ON;")     # por si metes claves foráneas
+    return conn
+
+
 # --- Cargar datos ---
 @st.cache_data(ttl=60)
 def cargar_datos():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = _get_conn()
     vacantes = pd.read_sql_query("SELECT * FROM vacantes", conn)
     empresas = pd.read_sql_query("SELECT * FROM empresas", conn)
     conn.close()
@@ -50,19 +60,19 @@ st.set_page_config(layout="wide")
 
 st.title("📊 Visor de Vacantes Analizadas")
 
-# --- Panel de resumen general ---
-st.header("Resumen general")
-col1, col2, col3 = st.columns(3)
+# # --- Panel de resumen general ---
+# st.header("Resumen general")
+# col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.metric("Vacantes totales", len(vacantes))
+# with col1:
+#     st.metric("Vacantes totales", len(vacantes))
 
-with col2:
-    st.metric("Empresas únicas", empresas['company'].nunique())
+# with col2:
+#     st.metric("Empresas únicas", empresas['company'].nunique())
 
-with col3:
-    missing_empresas = vacantes[~vacantes['company'].isin(empresas['company'])]['company'].nunique()
-    st.metric("Empresas sin datos", missing_empresas)
+# with col3:
+#     missing_empresas = vacantes[~vacantes['company'].isin(empresas['company'])]['company'].nunique()
+#     st.metric("Empresas sin datos", missing_empresas)
 
 
 
@@ -144,8 +154,8 @@ with col_chart:
         ax.bar(counts.index, counts.values)
         ax.set_title("Antigüedad (vista)", fontsize=10)
         ax.set_xlabel("")
-        ax.set_ylabel("")
-        ax.tick_params(axis="x", labelrotation=45)
+        ax.set_ylabel("Vacantes")
+        ax.set_xticklabels(counts.index, rotation=30, ha="right", fontsize=8)
         ax.grid(False)
         st.pyplot(fig, use_container_width=False)
 
