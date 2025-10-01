@@ -14,7 +14,7 @@ import yaml
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "vacantes.db")
-CONFIG_PATH = os.path.join(DB_PATH, "config_scraper.yaml")
+CONFIG_PATH = os.path.join(BASE_DIR,"data","config_scraper.yaml")
 MX = zoneinfo.ZoneInfo("America/Monterrey")
 
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:

@@ -7,7 +7,7 @@ services:
     container_name: jobspy_scraper
     volumes:
       - ${DATA_PATH:-./data}:/app/data
-    restart: unless-stopped
+    restart: no
 
   frontend:
     build:
