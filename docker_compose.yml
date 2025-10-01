@@ -6,7 +6,7 @@ services:
       context: ./scraper
     container_name: jobspy_scraper
     volumes:
-      - ./data:/app/data
+      - ${DATA_PATH:-./data}:/app/data
     restart: unless-stopped
 
   frontend:
@@ -16,7 +16,7 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./data:/app/data
+      - ${DATA_PATH:-./data}:/app/data
     depends_on:
       - scraper
     restart: unless-stopped

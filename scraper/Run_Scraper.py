@@ -8,16 +8,21 @@ from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run
 import zoneinfo
 import logging
 import os
+import yaml
 
 # --- Configuración ---
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "vacantes.db")
+CONFIG_PATH = os.path.join(DB_PATH, "config_scraper.yaml")
 MX = zoneinfo.ZoneInfo("America/Monterrey")
 
-roles = ["VP"] #, "Vice President", "Director", "Head", "Executive"]
-functions = ["Procurement", "Sourcing"] #, "Commodity", "Category"]
-locations = ["Nuevo Leon, Mexico", "Mexico", "United States"] #, "Canada", "France"]
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f)
+
+roles = config["roles"]
+functions = config["functions"]
+locations = config["locations"]
 
 def SCRAPYSCRAPY(job_title, job_location, job_country):
     
