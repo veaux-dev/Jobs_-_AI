@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Data (no queremos meter la DB en la imagen)
+data/
+
+# Logs
+*.log
+
+# Jupyter
+*.ipynb_checkpoints/

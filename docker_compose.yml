@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  scraper:
+    build:
+      context: ./scraper
+    container_name: jobspy_scraper
+    volumes:
+      - ./data:/app/data   # comparte la carpeta con la DB
+    command: ["python", "run_scraper.py"]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: jobspy_frontend
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data   # el frontend ve la misma DB
+    command: ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    restart: unless-stopped
