@@ -53,7 +53,9 @@ def init_db():
             es_procurement INTEGER,                  -- Flag binario (0/1) si es relevante al área de Procurement
             es_fit_usuario INTEGER,                  -- Flag binario (0/1) si hace match con el perfil del usuario
             nivel_estimado TEXT,                      -- estimacion por IA del nivel de la vacante
-            comentario_ai TEXT                       -- Comentario generado por IA sobre la vacante
+            comentario_ai TEXT,                       -- Comentario generado por IA sobre la vacante
+            score_total INTEGER,                     -- scoring de fit de la vacante
+            categoria_fit TEXT                          -- fit intuido en funccion del score. 
         )
     """)
 

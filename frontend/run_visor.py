@@ -68,7 +68,7 @@ with col3:
 
 # --- Filtros ---
 st.sidebar.header("Filtros")
-score_min = st.sidebar.slider("Score mínimo", min_value=0, max_value=120, value=85, step=5)
+score_min = st.sidebar.slider("Score mínimo", min_value=-1, max_value=120, value=85, step=5)
 filtro_lugar = st.sidebar.text_input("📍 Filtrar por lugar (puedes usar múltiples, separados por coma)").strip().lower()
 filtro_empresa = st.sidebar.text_input("🏢 Filtrar por empresa (puedes usar múltiples, separados por coma)").strip().lower()
 status_sel = st.sidebar.multiselect(
