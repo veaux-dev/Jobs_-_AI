@@ -4,11 +4,22 @@ from datetime import datetime
 from urllib.parse import urlparse
 import os
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "data", "vacantes.db")
+DB_PATH = None
+
+def set_db_path(path: str):
+    global DB_PATH
+    DB_PATH = path
+
+def _get_conn():
+    if DB_PATH is None:
+        raise RuntimeError("DB_PATH not set. Call set_db_path() first.")
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    return conn
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     cursor = conn.cursor()
 
         # Tabla de vacantes
@@ -70,7 +81,8 @@ def calculate_hash(link:str)->str:
 def insert_vacante(vac):
     NEW_TO_ACTIVE_DAYS = 3  # ajustable
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
+
     cursor = conn.cursor()
 
     now = datetime.today().strftime("%Y-%m-%d")
@@ -159,7 +171,8 @@ def insert_vacante(vac):
 
 
 def insert_or_update_empresa(empresa):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
+
     cursor = conn.cursor()
 
     def parse_date(value):
@@ -191,7 +204,8 @@ def insert_or_update_empresa(empresa):
     conn.close()
 
 def fetch_all_vacantes():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
+
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM vacantes")
@@ -200,7 +214,8 @@ def fetch_all_vacantes():
     return rows
 
 def get_vacante_by_id(vac_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
+
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM vacantes WHERE job_hash = ?", (vac_id,))
     row = cursor.fetchone()
@@ -208,7 +223,8 @@ def get_vacante_by_id(vac_id):
     return row
 
 def update_vacante_status(vac_id, status):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
+
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE vacantes
@@ -235,7 +251,7 @@ def normalize_link(link: str) -> str:
 def update_vacante_fields(vacante_id, cambios: dict):
     if not cambios:
         return
-    with sqlite3.connect(DB_PATH) as conn:
+    with _get_conn() as conn:
         cur = conn.cursor()
         for campo, valor in cambios.items():
             cur.execute(f"UPDATE vacantes SET {campo} = ? WHERE job_hash = ?", (valor, vacante_id))
@@ -243,7 +259,7 @@ def update_vacante_fields(vacante_id, cambios: dict):
 
 def finalize_scrape_run ():
     today_str = datetime.today().strftime("%Y-%m-%d")
-    with sqlite3.connect(DB_PATH) as conn:
+    with _get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             UPDATE vacantes
@@ -255,7 +271,7 @@ def finalize_scrape_run ():
     conn.commit()
 
 def empresa_ya_clasificada(nombre):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT 1 FROM empresas WHERE company = ? AND last_updated IS NOT NULL", (nombre,))
     result = cursor.fetchone()

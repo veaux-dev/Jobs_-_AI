@@ -4,7 +4,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 from datetime import datetime, date
-from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run, init_db
+from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run, init_db, set_db_path
 import zoneinfo
 import logging
 import os
@@ -38,6 +38,9 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 
 print(f"[SCRAPER] DATA_DIR={DATA_DIR}")
 print(f"[SCRAPER] DB_PATH={DB_PATH}")
+print(f"[SCRAPER] CONFIG_PATH={CONFIG_PATH}")
+
+set_db_path(DB_PATH)
 
 roles = config["roles"]
 functions = config["functions"]
