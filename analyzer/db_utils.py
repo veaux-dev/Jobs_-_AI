@@ -147,3 +147,19 @@ def get_empresas_pendientes(force=False):
         else:
             cur.execute("SELECT company FROM empresas WHERE resumen_empresa IS NULL")
         return [row[0] for row in cur.fetchall()]
+    
+def fetch_all_vacantes_enriched():
+    """
+    Devuelve todas las vacantes con información extendida de la tabla empresas.
+    Usa SELECT * (vacantes + empresas).
+    Nota: si hay columnas con nombres duplicados, SQLite conservará la última.
+    """
+    with _get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT *
+            FROM vacantes v
+            LEFT JOIN empresas e ON v.company = e.company
+        """)
+        return [dict(row) for row in cur.fetchall()]

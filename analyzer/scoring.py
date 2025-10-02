@@ -1,7 +1,7 @@
-import sqlite3
 from datetime import datetime
+from db_utils import fetch_all_vacantes_enriched , update_vacante_fields
 
-DB_PATH = "vacantes.db"
+
 HOY = datetime.today().date()
 
 # --- Funciones de puntaje ---
@@ -65,52 +65,29 @@ def puntaje_recencia(fecha):
 
 # --- Calcular scoring ---
 def calcular_scoring():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    vacantes = fetch_all_vacantes_enriched()
 
-    c.execute("PRAGMA table_info(vacantes)")
-    columnas = [col[1] for col in c.fetchall()]
-    if "score_total" not in columnas:
-        c.execute("ALTER TABLE vacantes ADD COLUMN score_total INTEGER")
-    if "categoria_fit" not in columnas:
-        c.execute("ALTER TABLE vacantes ADD COLUMN categoria_fit TEXT")
-
-    query = """
-    SELECT v.rowid, v.es_fit_usuario, v.es_procurement, v.nivel_estimado,
-           v.modalidad_trabajo, v.location, v.date,
-           e.resumen_empresa, e.presencia_mexico
-    FROM vacantes v
-    LEFT JOIN empresas e ON v.company = e.company
-    """
-
-    rows = c.execute(query).fetchall()
-
-    for row in rows:
-        rowid, fit_usuario, es_proc, nivel, modalidad, loc, fecha, resumen, presencia_mx = row
+    for vac in vacantes:
+        
 
         score = 0
-        score += puntaje_fit_usuario(fit_usuario)
-        score += puntaje_procurement(es_proc)
-        score += puntaje_nivel(nivel)
-        score += puntaje_industria(resumen)
-        score += puntaje_ubicacion(presencia_mx, loc)
-        score += puntaje_modalidad(modalidad, loc)
-        score += puntaje_francia(resumen)
-        score += puntaje_recencia(fecha)
+        score += puntaje_fit_usuario(vac.get("es_fit_usuario"))
+        score += puntaje_procurement(vac.get("es_procurement"))
+        score += puntaje_nivel(vac.get("nivel_estimado"))
+        score += puntaje_industria(vac.get("resumen_empresa"))
+        score += puntaje_ubicacion(vac.get("presencia_mexico"), vac.get("location"))
+        score += puntaje_modalidad(vac.get("modalidad_trabajo"), vac.get("location"))
+        score += puntaje_francia(vac.get("resumen_empresa"))
+        score += puntaje_recencia(vac.get("date"))
 
-        if score >= 100:
-            categoria = "🔵 Excelente fit"
-        elif score >= 80:
-            categoria = "🟢 Buen fit"
-        elif score >= 60:
-            categoria = "🟡 Fit moderado"
-        else:
-            categoria = "🔴 No relevante"
+        if score >= 100:    categoria = "🔵 Excelente fit"
+        elif score >= 80:   categoria = "🟢 Buen fit"
+        elif score >= 60:   categoria = "🟡 Fit moderado"
+        else:               categoria = "🔴 No relevante"
+        
+        update_vacante_fields(vac["rowid"], {
+            "score_total": score,
+            "categoria_fit": categoria
+        })
 
-        c.execute("""
-            UPDATE vacantes SET score_total = ?, categoria_fit = ? WHERE rowid = ?
-        """, (score, categoria, rowid))
-
-    conn.commit()
-    conn.close()
     print("Scoring actualizado.")

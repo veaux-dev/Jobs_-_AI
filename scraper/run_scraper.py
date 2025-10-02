@@ -117,6 +117,7 @@ if __name__ == "__main__":
 
 
     init_db()
+    total_new_jobs=0
 
     with tqdm(total=total_loops, desc="Scraping jobs") as pbar:
         for role in roles:
