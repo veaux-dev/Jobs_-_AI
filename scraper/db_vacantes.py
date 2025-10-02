@@ -81,7 +81,7 @@ def calculate_hash(link:str)->str:
     return hashlib.sha256(linknorm.encode()).hexdigest()
 
 def insert_vacante(vac):
-    NEW_TO_ACTIVE_DAYS = 3  # ajustable
+    NEW_TO_ACTIVE_DAYS = 5  # ajustable
 
     conn = _get_conn()
 
@@ -171,39 +171,6 @@ def insert_vacante(vac):
     conn.commit()
     conn.close()
 
-
-def insert_or_update_empresa(empresa):
-    conn = _get_conn()
-
-    cursor = conn.cursor()
-
-    def parse_date(value):
-        return datetime.strptime(value, "%Y-%m-%d").date() if value else None
-
-    cursor.execute("""
-        INSERT INTO empresas (
-            company, resumen_empresa, sector_empresa, tamaño_empresa,
-            presencia_mexico, glassdoor_score, last_updated
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(company) DO UPDATE SET
-            resumen_empresa = excluded.resumen_empresa,
-            sector_empresa = excluded.sector_empresa,
-            tamaño_empresa = excluded.tamaño_empresa,
-            presencia_mexico = excluded.presencia_mexico,
-            glassdoor_score = excluded.glassdoor_score,
-            last_updated = excluded.last_updated
-    """, (
-        empresa.get("company"),
-        empresa.get("resumen_empresa"),
-        empresa.get("sector_empresa"),
-        empresa.get("tamaño_empresa"),
-        empresa.get("presencia_mexico"),
-        empresa.get("glassdoor_score"),
-        parse_date(empresa.get("last_updated"))
-    ))
-
-    conn.commit()
-    conn.close()
 
 def fetch_all_vacantes():
     conn = _get_conn()

@@ -18,9 +18,9 @@ Fecha de creación: 2025-07-24
 """
 
 
-# modules/empresa_info.py
+# analyzer/empresa_info.py
 
-from modules.db_vacantes import fetch_all_vacantes, insert_or_update_empresa
+from db_utils import insert_or_update_empresa
 import sqlite3
 import datetime
 

@@ -155,7 +155,7 @@ with col_chart:
         ax.set_title("Antigüedad (vista)", fontsize=10)
         ax.set_xlabel("")
         ax.set_ylabel("Vacantes")
-        ax.set_xticklabels(counts.index, rotation=30, ha="right", fontsize=8)
+        ax.set_xticklabels(counts.index, rotation=30, ha="right", fontsize=6)
         ax.grid(False)
         st.pyplot(fig, use_container_width=False)
 
