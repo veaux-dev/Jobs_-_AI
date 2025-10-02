@@ -117,6 +117,10 @@ def insert_vacante(vac):
             status = ?
             WHERE job_hash = ?
         """, (now, status, vac["job_hash"]))
+        
+        conn.commit()
+        conn.close()
+        return 0
 
     else:
         # Inserta nueva vacante
@@ -167,9 +171,10 @@ def insert_vacante(vac):
             vac.get("comentario_ai"),
             vac.get("site_name")
         ))
+        conn.commit()
+        conn.close()
+        return 1
 
-    conn.commit()
-    conn.close()
 
 
 def get_vacante_by_id(vac_id):
@@ -233,3 +238,24 @@ def parse_date(value):
         except ValueError:
             return None
     return None
+
+def log_scraper_run(start_time, new_jobs_found, duration):
+    """
+    Inserta en la tabla pipeline_runs un registro de la ejecución del scraper.
+
+    Args:
+        start_time (datetime): timestamp de inicio de la corrida.
+        new_jobs_found (int): número de vacantes nuevas encontradas.
+        duration (int): duración en segundos del scraping.
+    """
+    with _get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO pipeline_runs (timestamp, new_jobs_found, duration_01_scraper)
+            VALUES (?, ?, ?)
+        """, (
+            start_time.isoformat(timespec='seconds'),
+            new_jobs_found,
+            duration
+        ))
+        conn.commit()

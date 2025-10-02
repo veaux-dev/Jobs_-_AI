@@ -4,10 +4,8 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 from datetime import datetime, date
-from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run, init_db, set_db_path
+from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run, init_db, set_db_path,log_scraper_run
 import zoneinfo
-import logging
-import os
 from pathlib import Path
 import yaml
 
@@ -53,8 +51,8 @@ def SCRAPYSCRAPY(job_title, job_location, job_country):
             search_term=job_title,
             google_search_term=f"{job_title} jobs near {job_location} since yesterday",
             location=job_location,
-            results_wanted=20,
-            hours_old=72,
+            results_wanted=50,
+            hours_old=168,
             country_indeed=job_country,
             verbose=0,
             linkedin_fetch_description=True # gets more info such as description, direct job url (slower)
@@ -84,7 +82,7 @@ def map_jobspy_row(row, qry_title, qry_loc):
         "scraped_at": now_local.isoformat(),
         "last_seen_on": now_local.date().isoformat(),
         "date": row["date_posted"].isoformat() if isinstance(row.get("date_posted"), date) else None,
-        "full_text" : clean_text(row.get("description")),
+        "full_text" : clean_text(desc) if isinstance(desc, str) else "[[NO DESCRIPTION RETURNED]]",
         "modalidad_trabajo": "remote" if(row.get("is_remote") is True or row.get("work_from_home_type") is True) else "not remote",
         "tipo_contrato": row.get("job_type"),
         "salario_estimado": f"{row.get('min_amount') or ''} to {row.get('max_amount') or ''} {row.get('currency') or ''} {row.get('interval') or ''}",
@@ -99,6 +97,9 @@ def clean_text(text):
 
 if __name__ == "__main__":
     
+    start = datetime.now()
+    print(f"\n[SCRAPER] Started at {start.isoformat(sep=' ', timespec='seconds')}\n")
+
     all_jobs=[]
     
     total_loops=len(roles)*len(functions)*len(locations)
@@ -115,33 +116,29 @@ if __name__ == "__main__":
             loc_country.append((loc, loc))
 
 
-    
-    count=0
-
     init_db()
 
     with tqdm(total=total_loops, desc="Scraping jobs") as pbar:
         for role in roles:
             for function in functions:
                 for location,country in loc_country:
-                    count=len(all_jobs)
-
-
-                    
+                   
                     qry_title=f'{role} {function}'
                     qry_loc=f'{loc}'
 
                     jobs_found=SCRAPYSCRAPY(f'{role} {function}', location, country)
 
                     if not jobs_found.empty:
+                        new_this_batch = 0
                         for _, row in jobs_found.iterrows():
                             vac = map_jobspy_row(row, qry_title, qry_loc)
-                            insert_vacante(vac)
+                            new_this_batch+=insert_vacante(vac)
+                        total_new_jobs+=new_this_batch
                         pbar.set_postfix({
                             "role": role,
                             "func": function,
                             "loc": location,
-                            "jobs": len(jobs_found)
+                            "jobs": new_this_batch
                         })
                     else:
                         pbar.set_postfix({
@@ -151,12 +148,19 @@ if __name__ == "__main__":
                             "jobs": 0
                     })
 
-                    # print(f'Found {len(jobs_found)} jobs')
+                    
                     all_jobs.append(jobs_found)
-                    count=len(all_jobs)
-                    # print(f'\n[END] ... {role} {function} in {location} ....\n')
-
+                    
                     time.sleep(random.randint(3, 6))
                     pbar.update(1)
 
     finalize_scrape_run()
+
+    end = datetime.now()
+    duration = int((end - start).total_seconds())
+
+    log_scraper_run(start, total_new_jobs, duration)
+
+    print(f"\n[SCRAPER] Finished at {end.isoformat(sep=' ', timespec='seconds')}")
+    print(f"[SCRAPER] Duration: {duration}s")
+    print(f"[SCRAPER] New jobs this run: {total_new_jobs}/n")
