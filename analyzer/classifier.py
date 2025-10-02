@@ -1,22 +1,25 @@
-from modules.db_vacantes import fetch_all_vacantes, update_vacante_fields, insert_or_update_empresa, empresa_ya_clasificada
-from modules.prompts import prompt_procurement, prompt_fit_usuario, prompt_nivel, prompt_info_empresa
-from modules.tu_llm_wrapper import evaluar_booleano, evaluar_con_llm
+from db_utils import fetch_all_vacantes, update_vacante_fields, insert_or_update_empresa, get_empresas_pendientes
+from prompts import prompt_procurement, prompt_fit_usuario, prompt_nivel, prompt_info_empresa
+from llm_wrapper import evaluar_booleano, evaluar_con_llm
 from datetime import datetime
 import json
 
 DEFAULT_MODEL = 'gemma3'
 
 def es_procurement(vacante):
+    """Clasifica si una vacante pertenece a Procurement usando LLM."""
     if not vacante['full_text'].strip():
         return None
     return evaluar_booleano(prompt_procurement(vacante), modelo=DEFAULT_MODEL)
 
 def es_fit_usuario(vacante):
+    """Evalúa si la vacante encaja con el perfil del usuario usando LLM."""
     if not vacante['full_text'].strip():
         return None
     return evaluar_booleano(prompt_fit_usuario(vacante), modelo=DEFAULT_MODEL)
 
 def estimar_nivel(vacante):
+    """Estima nivel de seniority (entry, manager, director, VP+) usando LLM."""
     if not vacante['full_text'].strip():
         return None
     nivel = evaluar_con_llm(prompt_nivel(vacante), modelo=DEFAULT_MODEL).strip().lower()
@@ -25,6 +28,7 @@ def estimar_nivel(vacante):
     return None
 
 def clasificar_vacantes(force=False):
+    """Clasifica todas las vacantes nuevas/en proceso y guarda resultados usando LLM."""
     vacantes = fetch_all_vacantes()
     print(f"🧠 Clasificando {len(vacantes)} vacantes...")
 
@@ -51,7 +55,8 @@ def clasificar_vacantes(force=False):
         if cambios:
             update_vacante_fields(id_, cambios)
 
-def extraer_info_empresa(nombre_empresa, modelo='gemma3'):
+def extraer_info_empresa(nombre_empresa, modelo=DEFAULT_MODEL):
+    """Genera info ejecutiva de una empresa usando LLM y devuelve dict."""
     prompt = prompt_info_empresa(nombre_empresa)
     respuesta = evaluar_con_llm(prompt, modelo=modelo)
 
@@ -77,34 +82,37 @@ def extraer_info_empresa(nombre_empresa, modelo='gemma3'):
 
 
 def clasificar_empresas(report_callback=None, force=False):
-    vacantes = fetch_all_vacantes()
-    empresas_vistas = set()
-    empresas_totales = sorted(set(v['company'] for v in vacantes if v['company']))
-    total = len(empresas_totales)
+    """Enriquece la tabla `empresas` con información ejecutiva vía LLM.
 
+    Args:
+        report_callback (dict, opcional): objetos de UI como {'progress': ..., 'status': ...}
+        force (bool): si True, reprocesa todas las empresas. Si False, solo las que tengan campos vacíos.
+    """
+
+    # 1. Seleccionar empresas según modo
+    empresas_pendientes = get_empresas_pendientes(force)
+    total = len(empresas_pendientes)
+    print(f"🧠 Clasificando {total} empresas{' (FORCE)' if force else ''}...")
+
+       # 2. Configuración opcional de UI
+    progress = status = None
     if report_callback:
-        progress = report_callback['progress']
-        status = report_callback['status']
+        progress = report_callback.get('progress')
+        status = report_callback.get('status')
 
-    for i, empresa in enumerate(empresas_totales):
-        if empresa in empresas_vistas:
-            continue
-        
-        # 👇 Salta empresas que ya están clasificadas (a menos que force=True)
-        if not force and empresa_ya_clasificada(empresa):
-            continue
-
-        if report_callback:
-            status.text(f"Procesando: {empresa} ({i+1}/{total})")
-            progress.progress((i + 1) / total)
+    # 3. Loop principal
+    for i, empresa in enumerate(empresas_pendientes, start=1):
+        if status:
+            status.text(f"Procesando: {empresa} ({i}/{total})")
+        if progress:
+            progress.progress(i / total)
 
         info = extraer_info_empresa(empresa)
-
         if info:
             insert_or_update_empresa(info)
-        empresas_vistas.add(empresa)
 
-    if report_callback:
+    # 4. UI al terminar
+    if status:
         status.text("✅ Clasificación de empresas completada.")
+    if progress:
         progress.progress(1.0)
-

@@ -172,16 +172,6 @@ def insert_vacante(vac):
     conn.close()
 
 
-def fetch_all_vacantes():
-    conn = _get_conn()
-
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM vacantes")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
 def get_vacante_by_id(vac_id):
     conn = _get_conn()
 
@@ -217,14 +207,7 @@ def normalize_link(link: str) -> str:
     # indeed / glassdoor y demás -> conserva query
     return link
 
-def update_vacante_fields(vacante_id, cambios: dict):
-    if not cambios:
-        return
-    with _get_conn() as conn:
-        cur = conn.cursor()
-        for campo, valor in cambios.items():
-            cur.execute(f"UPDATE vacantes SET {campo} = ? WHERE job_hash = ?", (valor, vacante_id))
-        conn.commit()
+
 
 def finalize_scrape_run ():
     today_str = datetime.today().strftime("%Y-%m-%d")
@@ -238,14 +221,6 @@ def finalize_scrape_run ():
             AND status IN ('new', 'active')
         """, (today_str,))
     conn.commit()
-
-def empresa_ya_clasificada(nombre):
-    conn = _get_conn()
-    cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM empresas WHERE company = ? AND last_updated IS NOT NULL", (nombre,))
-    result = cursor.fetchone()
-    conn.close()
-    return result is not None
 
 def parse_date(value):
     if not value:

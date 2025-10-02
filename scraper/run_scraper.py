@@ -20,12 +20,11 @@ BASE_DIR = Path(__file__).resolve().parent
 candidates = [
     BASE_DIR / "data",           # caso Docker
     BASE_DIR.parent / "data",    # caso local si hay carpeta "data" arriba
-    BASE_DIR.parent / "l_data",  # caso local con tu layout actual
 ]
 
 DATA_DIR = next((p for p in candidates if p.exists()), None)
 if DATA_DIR is None:
-    raise FileNotFoundError("No se encontró carpeta data/l_data en ninguna ruta candidata.")
+    raise FileNotFoundError("No se encontró carpeta data en ninguna ruta candidata.")
 
 # 3. Rutas absolutas que siempre serán BASE/DATA/...
 DB_PATH = DATA_DIR / "vacantes.db"
@@ -70,7 +69,7 @@ def SCRAPYSCRAPY(job_title, job_location, job_country):
 # --- Helper: mapear output JobSpy → formato DB ---
 def map_jobspy_row(row, qry_title, qry_loc):
     now_local = datetime.now(MX)
-
+    desc = row.get("description")
     return {
         "job_hash": calculate_hash(row["job_url"]),
         "site_name": row["site"],
@@ -81,7 +80,7 @@ def map_jobspy_row(row, qry_title, qry_loc):
         "company": row.get("company"),
         "location": row.get("location"),
         "link": row.get("job_url"),
-        "job_description": row.get("description") if isinstance(row.get("description", str)) else "[[NO DESCRIPTION RETURNED]]",
+        "job_description": desc if isinstance(desc, str) else "[[NO DESCRIPTION RETURNED]]",
         "scraped_at": now_local.isoformat(),
         "last_seen_on": now_local.date().isoformat(),
         "date": row["date_posted"].isoformat() if isinstance(row.get("date_posted"), date) else None,

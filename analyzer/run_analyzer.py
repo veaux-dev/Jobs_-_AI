@@ -1,7 +1,30 @@
 from datetime import datetime
+from db_utils import set_db_path
 import empresa_info,classifier,scoring
 import sqlite3
+from pathlib import Path
 
+# 1. Punto de partida: carpeta donde está este script
+BASE_DIR = Path(__file__).resolve().parent
+
+# 2. Busca una carpeta llamada "data" o "l_data" en niveles relevantes
+candidates = [
+    BASE_DIR / "data",           # caso Docker
+    BASE_DIR.parent / "data",    # caso local si hay carpeta "data" arriba
+]
+
+DATA_DIR = next((p for p in candidates if p.exists()), None)
+if DATA_DIR is None:
+    raise FileNotFoundError("No se encontró carpeta data en ninguna ruta candidata.")
+
+# 3. Rutas absolutas que siempre serán BASE/DATA/...
+DB_PATH = DATA_DIR / "vacantes.db"
+
+set_db_path(DB_PATH)
+
+OLLAMA_PATH = 'C:\\Users\\Aizen\\AppData\\Local\\Programs\\Ollama\\ollama.exe'
+
+set_ollama_path(OLLAMA_PATH)
 
 def count_rows(table_name):
     conn = sqlite3.connect("vacantes.db")
