@@ -46,8 +46,7 @@ Jobspy/
 
 ### Clone the repo
 ```bash
-git clone https://github.com/123StudioApps/jobspy.git
-cd jobspy
+git clone https://github.com/veaux-dev/Jobs_-_AI.git
 ```
 
 ### Scraper (local run)
@@ -82,9 +81,9 @@ docker-compose up --build
 ## 📌 Roadmap
 - [x] Scraper with deduplication and DB integration  
 - [x] Initial LLM wrapper for classification  
-- [ ] Company enrichment (`empresa_info`) automation  
-- [ ] Full analyzer pipeline integration  
-- [ ] Deployment with auto-updating Docker in Portainer  
+- [x] Company enrichment (`empresa_info`) automation  
+- [x] Full analyzer pipeline integration  
+- [x] Deployment with auto-updating Docker in Portainer  
 
 ---
 
