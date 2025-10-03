@@ -155,11 +155,43 @@ def fetch_all_vacantes_enriched():
     Nota: si hay columnas con nombres duplicados, SQLite conservará la última.
     """
     with _get_conn() as conn:
-        conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("""
-            SELECT *
+            SELECT v.rowid, v.*, e.resumen_empresa, e.sector_empresa, e.tamaño_empresa, e.presencia_mexico, e.glassdoor_score
             FROM vacantes v
             LEFT JOIN empresas e ON v.company = e.company
         """)
-        return [dict(row) for row in cur.fetchall()]
+        rows = cur.fetchall()
+        return [dict(zip([c[0] for c in cur.description], row)) for row in rows]
+
+def log_analyzer_run(timestamp, total_jobs, total_companies,
+                     duration_total, duration_extract,
+                     duration_enrich, duration_classify, duration_score):
+    """
+    Inserta en la tabla pipeline_runs un registro de la ejecución del analyzer.
+    Los campos relacionados con scraping se dejan en NULL.
+    """
+    with _get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO pipeline_runs (
+                timestamp, new_jobs_found, total_jobs, total_companies,
+                duration_00_total, duration_01_scraper, duration_02_extract,
+                duration_03_enrich, duration_04_classify, duration_05_score
+            ) VALUES (?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?)
+        """, (
+            timestamp, total_jobs, total_companies,
+            duration_total, duration_extract,
+            duration_enrich, duration_classify, duration_score
+        ))
+        conn.commit()
+
+def db_table_count_rows(table_name):
+    """
+    Devuelve el número de filas en la tabla especificada.
+    """
+    with _get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+        return cur.fetchone()[0]
+    

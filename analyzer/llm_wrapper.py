@@ -18,11 +18,20 @@ import unicodedata
 
 OLLAMA_PATH = None
 
+DEFAULT_MODEL = 'gemma3'
+
 def set_ollama_path(path):
     global OLLAMA_PATH
     OLLAMA_PATH = path
 
-def ejecutar_ollama(prompt, modelo='gemma3'):
+def set_default_model(model_name: str):
+    """
+    Cambia el modelo por defecto usado en las llamadas al LLM.
+    """
+    global DEFAULT_MODEL
+    DEFAULT_MODEL = model_name
+
+def ejecutar_ollama(prompt, modelo=DEFAULT_MODEL):
     """
     Ejecuta una consulta en Ollama usando el modelo especificado (ej: 'gemma' o 'deepseek').    
     """
@@ -44,7 +53,7 @@ def ejecutar_ollama(prompt, modelo='gemma3'):
     
 
 
-def evaluar_con_llm(prompt, modelo='gemma3'):
+def evaluar_con_llm(prompt, modelo=DEFAULT_MODEL):
     """
     Llama al modelo y retorna la respuesta completa (texto completo).
     """
@@ -65,7 +74,7 @@ def normalize(text: str) -> str:
     ).lower()
 
 
-def evaluar_booleano(prompt, modelo='gemma3'):
+def evaluar_booleano(prompt, modelo=DEFAULT_MODEL):
     """
     Llama al modelo y trata de interpretar si la respuesta fue un 'sí' o 'no'.
     Normaliza la salida para evitar problemas con acentos o mayúsculas.

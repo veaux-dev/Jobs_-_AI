@@ -58,8 +58,8 @@ def llenar_tabla_empresas():
                 print(f" - {e}")
     else:
         print("✅ No hay empresas nuevas por registrar.")
-        return
-
+        return 0
+    count=0
     for company in nuevas_empresas:
         info = {
             "company": company,
@@ -72,3 +72,5 @@ def llenar_tabla_empresas():
         }
         insert_or_update_empresa(info)
         print(f"✅ Empresa añadida: {company}")
+        count += 1
+    return count

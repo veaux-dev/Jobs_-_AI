@@ -1,10 +1,11 @@
 from db_utils import fetch_all_vacantes, update_vacante_fields, insert_or_update_empresa, get_empresas_pendientes
 from prompts import prompt_procurement, prompt_fit_usuario, prompt_nivel, prompt_info_empresa
-from llm_wrapper import evaluar_booleano, evaluar_con_llm
+from llm_wrapper import evaluar_booleano, evaluar_con_llm, DEFAULT_MODEL
 from datetime import datetime
 import json
+from tqdm import tqdm
 
-DEFAULT_MODEL = 'gemma3'
+
 
 def es_procurement(vacante):
     """Clasifica si una vacante pertenece a Procurement usando LLM."""
@@ -32,7 +33,7 @@ def clasificar_vacantes(force=False):
     vacantes = fetch_all_vacantes()
     print(f"🧠 Clasificando {len(vacantes)} vacantes...")
 
-    for vac in vacantes:
+    for vac in tqdm(vacantes,desc='Progreso Vacantes', unit='vac'):
         id_ = vac['job_hash']
         cambios = {}
 
@@ -81,38 +82,22 @@ def extraer_info_empresa(nombre_empresa, modelo=DEFAULT_MODEL):
     }
 
 
-def clasificar_empresas(report_callback=None, force=False):
-    """Enriquece la tabla `empresas` con información ejecutiva vía LLM.
-
-    Args:
-        report_callback (dict, opcional): objetos de UI como {'progress': ..., 'status': ...}
-        force (bool): si True, reprocesa todas las empresas. Si False, solo las que tengan campos vacíos.
+def clasificar_empresas(force=False):
     """
+    Enriquecer empresas en la tabla `empresas` usando LLM.
+    - Si force=True: reprocesa todas.
+    - Si force=False: solo las que no tienen resumen.
+    """
+    empresas = get_empresas_pendientes(force=force)
+    total = len(empresas)
+    procesadas = 0
 
-    # 1. Seleccionar empresas según modo
-    empresas_pendientes = get_empresas_pendientes(force)
-    total = len(empresas_pendientes)
     print(f"🧠 Clasificando {total} empresas{' (FORCE)' if force else ''}...")
 
-       # 2. Configuración opcional de UI
-    progress = status = None
-    if report_callback:
-        progress = report_callback.get('progress')
-        status = report_callback.get('status')
-
-    # 3. Loop principal
-    for i, empresa in enumerate(empresas_pendientes, start=1):
-        if status:
-            status.text(f"Procesando: {empresa} ({i}/{total})")
-        if progress:
-            progress.progress(i / total)
-
+    for empresa in tqdm(empresas, desc="Progreso empresas", unit="emp"):
         info = extraer_info_empresa(empresa)
         if info:
             insert_or_update_empresa(info)
+            procesadas += 1
 
-    # 4. UI al terminar
-    if status:
-        status.text("✅ Clasificación de empresas completada.")
-    if progress:
-        progress.progress(1.0)
+    print(f"✅ Clasificación completada. Empresas enriquecidas: {procesadas}/{total}")

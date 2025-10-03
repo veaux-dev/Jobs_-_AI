@@ -215,17 +215,16 @@ def normalize_link(link: str) -> str:
 
 
 def finalize_scrape_run ():
-    today_str = datetime.today().strftime("%Y-%m-%d")
     with _get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             UPDATE vacantes
             SET status = 'closed'
             WHERE last_seen_on IS NOT NULL
-            AND DATE(last_seen_on) < DATE(?)
-            AND status IN ('new', 'active')
-        """, (today_str,))
-    conn.commit()
+              AND DATE(last_seen_on) < DATE('now','-3 days')
+              AND status IN ('new','active')
+        """)
+        conn.commit()
 
 def parse_date(value):
     if not value:
