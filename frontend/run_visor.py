@@ -173,6 +173,7 @@ st.caption(f"Mostrando {len(df_filtrado)} vacantes con score >= {score_min}")
 columnas_mostrar = ['score_total', 'categoria_fit','status','title', 'company','sector_empresa', 'scraped_at','location', 'presencia_mexico', 'es_procurement', 'es_fit_usuario', 'nivel_estimado','link']
 
 df_markdown = df_filtrado[columnas_mostrar].astype(str).replace("\|", " ", regex=True)
+df_markdown['score_total'] = df_markdown['score_total'].astype(int)
 
 st.markdown(
     df_markdown
