@@ -155,14 +155,15 @@ def fetch_all_vacantes_enriched():
     Nota: si hay columnas con nombres duplicados, SQLite conservará la última.
     """
     with _get_conn() as conn:
+        conn.row_factory = sqlite3.Row  # <- clave para dict(row)
         cur = conn.cursor()
         cur.execute("""
-            SELECT v.rowid, v.*, e.resumen_empresa, e.sector_empresa, e.tamaño_empresa, e.presencia_mexico, e.glassdoor_score
+            SELECT v.*, e.resumen_empresa, e.sector_empresa, e.tamaño_empresa, e.presencia_mexico, e.glassdoor_score
             FROM vacantes v
             LEFT JOIN empresas e ON v.company = e.company
         """)
         rows = cur.fetchall()
-        return [dict(zip([c[0] for c in cur.description], row)) for row in rows]
+        return [dict(r) for r in rows]
 
 def log_analyzer_run(timestamp, total_jobs, total_companies,
                      duration_total, duration_extract,

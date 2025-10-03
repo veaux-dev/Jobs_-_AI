@@ -85,7 +85,7 @@ def calcular_scoring():
         elif score >= 60:   categoria = "🟡 Fit moderado"
         else:               categoria = "🔴 No relevante"
         
-        update_vacante_fields(vac["rowid"], {
+        update_vacante_fields(vac['job_hash'], {
             "score_total": score,
             "categoria_fit": categoria
         })
