@@ -18,7 +18,7 @@ import unicodedata
 
 OLLAMA_PATH = None
 
-DEFAULT_MODEL = 'gemma3'
+DEFAULT_MODEL = 'mistral-nemo:latest'
 
 def set_ollama_path(path):
     global OLLAMA_PATH

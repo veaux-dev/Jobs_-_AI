@@ -6,9 +6,13 @@ __pycache__/
 *.pkl
 
 # Virtual environments
-.venv/
+.venv*/
 env/
 venv/
+*venv*/
+.conda/
+conda/
+.mamba/
 
 # Data (BD y archivos generados en runtime)
 data/
@@ -29,3 +33,12 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+# Local testing / benchmarks
+# Benchmarks and local tests
+analyzer/models_benchmark.py
+analyzer/ollama_benchmark_log.txt
+analyzer/*.txt
+analyzer/*.png
+analyzer/*benchmark*
+

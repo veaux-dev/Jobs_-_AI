@@ -9,6 +9,7 @@ import sqlite3
 import hashlib
 from datetime import datetime
 from urllib.parse import urlparse
+import pandas as pd
 import os
 
 DB_PATH = None
@@ -196,3 +197,45 @@ def db_table_count_rows(table_name):
         cur.execute(f"SELECT COUNT(*) FROM {table_name}")
         return cur.fetchone()[0]
     
+def bulk_update_vacantes_df(df, key_col="job_hash"):
+    """
+    Efficiently updates many vacantes in bulk using a pandas DataFrame.
+
+    Args:
+        df (pd.DataFrame): Must include a 'job_hash' column (or specify key_col)
+                           and one or more additional columns matching DB fields.
+        key_col (str): Name of the unique key column (default: 'job_hash').
+
+    Notes:
+        - Performs all updates in a single transaction (fast).
+        - Automatically builds parameterized UPDATE statements.
+        - Ideal for scoring or enrichment batches (hundreds/thousands of rows).
+        - Columns with NaN values are ignored for that row.
+    """
+
+    if df.empty:
+        print("⚠️ bulk_update_vacantes_df called with empty DataFrame.")
+        return
+
+    with _get_conn() as conn:
+        cur = conn.cursor()
+
+        # iterate rows, prepare update statements dynamically
+        for _, row in df.iterrows():
+            job_hash = row[key_col]
+            cambios = {
+                col: row[col]
+                for col in df.columns
+                if col != key_col and pd.notna(row[col])
+            }
+
+            if not cambios:
+                continue
+
+            set_clause = ", ".join([f"{c} = ?" for c in cambios.keys()])
+            values = list(cambios.values()) + [job_hash]
+            cur.execute(f"UPDATE vacantes SET {set_clause} WHERE {key_col} = ?", values)
+
+        conn.commit()
+
+    print(f"✅ Bulk update complete for {len(df)} rows ({len(df.columns)-1} fields each).")

@@ -9,9 +9,13 @@ import argparse
 BASE_DIR = Path(__file__).resolve().parent
 
 UNC_PATH = Path(r"\\TRUENAS\Job_Scraper\vacantes.db")
+# Ruta local en Linux cuando se monta el share con Smb4K.
+LINUX_PATH = Path("/mnt/Truenas_JobScraper/vacantes.db")
 
 if UNC_PATH.exists():
     DB_PATH = UNC_PATH
+elif LINUX_PATH.exists():
+    DB_PATH = LINUX_PATH
 else:
     # fallback a las rutas relativas de test/local
     candidates = [
@@ -21,9 +25,10 @@ else:
     DATA_DIR = next((p for p in candidates if p.exists()), None)
     if DATA_DIR is None:
         raise FileNotFoundError("No se encontró carpeta data en ninguna ruta candidata.")
+    assert DATA_DIR is not None  # para type checkers
     DB_PATH = DATA_DIR / "vacantes.db"
 
-set_db_path(DB_PATH)
+set_db_path(str(DB_PATH))
 print(f"[DB] Using database: {DB_PATH}")
 
 

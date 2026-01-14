@@ -2,3 +2,4 @@ python-jobspy
 pandas
 tqdm
 pyyaml
+beautifulsoup4

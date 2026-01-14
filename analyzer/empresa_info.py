@@ -74,3 +74,87 @@ def llenar_tabla_empresas():
         print(f"✅ Empresa añadida: {company}")
         count += 1
     return count
+
+import re, unicodedata
+
+# === REGEX PRECOMPILADOS ===
+_PUNCT_RE = re.compile(r"[^0-9a-z\s&'-]+")
+_THE_PREFIX = re.compile(r"^\s*the\s+", re.IGNORECASE)
+_PAREN_RE = re.compile(r"\([^)]*\)")
+_DOING_BUSINESS_RE = re.compile(r"\b(o/a|dba|doing business as)\b.*", re.IGNORECASE)
+
+_SUFFIXES = [
+    r"inc", r"ltd", r"corp", r"corporation", r"company",
+    r"plc", r"llc", r"lp", r"llp", r"holdings",
+    r"s\.?\s*a\.?\s*b\.?\s*de\s*c\.?\s*v\.?",
+    r"s\.?\s*a\.?\s*de\s*c\.?\s*v\.?",
+    r"sapi\s*de\s*cv",
+    r"s\.?\s*de\s*r\.?\s*l\.?\s*de\s*c\.?\s*v\.?",
+    r"s\.?\s*de\s*r\.?\s*l\.?",
+    r"sa\s*de\s*cv", r"s\s*de\s*rl\s*de\s*cv", r"s\s*de\s*rl",
+    r"s\.?\s*c\.?", r"sc", r"a\.?\s*c\.?", r"ac",
+    r"gmbh", r"ag", r"kg", r"sarl", r"sas", r"sa", r"spa", r"srl",
+    r"bv", r"nv", r"oyj?", r"ab", r"kk", r"ltda"
+]
+_SUFFIX_RE = re.compile(
+    r"(?:\s|,|-)*(?:(" + "|".join(_SUFFIXES) + r"))\b(?=$|\s|,|-)",
+    re.IGNORECASE,
+)
+_CO_SUFFIX_RE = re.compile(r"(?:\s|,|&|-)+co\b(?=$|\s|,|-)", re.IGNORECASE)
+
+def _ascii_fold(s: str) -> str:
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+
+def normalize_company_name(raw: str) -> str:
+    """Deterministic normalization of company names (v3.2 refined)."""
+    if not raw:
+        return ""
+
+    s = raw.strip()
+    s = _ascii_fold(s.lower())
+
+    # limpiar comillas/apóstrofes iniciales o finales
+    s = re.sub(r"^[\"'`]+|[\"'`]+$", "", s)
+
+    # limpiar paréntesis y frases tipo o/a, dba
+    s = _PAREN_RE.sub(" ", s)
+    s = _DOING_BUSINESS_RE.sub("", s)
+
+    # proteger '& co' antes del replace de &
+    s = re.sub(r"&\s*co\b", " andco", s, flags=re.IGNORECASE)
+
+    # símbolos comunes
+    s = s.replace("&", " and ")
+    s = _PUNCT_RE.sub(" ", s)
+    s = _THE_PREFIX.sub("", s)
+
+    # eliminar sufijos legales (excepto co)
+    prev = None
+    while prev != s:
+        prev = s
+        s = _SUFFIX_RE.sub("", s)
+
+    # eliminar 'co' solo si aislado y sin guion (no 'co-op', no 'cooperatives')
+    s = _CO_SUFFIX_RE.sub("", s)
+
+    # evitar truncar 'sa', 'ac', etc. solo si palabra completa
+    s = re.sub(r"\b(sa|ac)\b(?=$|\s|,|-)", "", s)
+
+    # apóstrofes: "arby's" -> "arbys" pero NO "bass" -> "bas"
+    s = re.sub(
+        r"\b([a-z]{2,})(?:\s+|')s\b",
+        lambda m: m.group(1) if not m.group(1).endswith("ss") else m.group(1) + "s",
+        s,
+    )
+
+    # eliminar apóstrofes residuales
+    s = s.replace("'", "")
+
+    # normalizar espacios / guiones
+    s = re.sub(r"\s+", " ", s).strip()
+    s = s.replace(" ", "-")
+
+    # colapsar guiones múltiples
+    s = re.sub(r"-{2,}", "-", s)
+
+    return s

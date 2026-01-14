@@ -1,6 +1,6 @@
 # Jobspy
 
-Modular job scraping and analysis system for procurement & executive job tracking.  
+Modular job scraping and analysis system for job tracking.  
 Built with Python, SQLite, Streamlit, and Docker.
 
 ---

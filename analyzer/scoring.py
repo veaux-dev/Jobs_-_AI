@@ -1,5 +1,7 @@
 from datetime import datetime
-from db_utils import fetch_all_vacantes_enriched , update_vacante_fields
+from db_utils import fetch_all_vacantes_enriched , bulk_update_vacantes_df
+import pandas as pd
+from tqdm import tqdm
 
 
 HOY = datetime.today().date()
@@ -23,13 +25,73 @@ def puntaje_nivel(nivel):
         return 5
     return 0
 
-def puntaje_industria(resumen):
+def puntaje_industria(resumen: str) -> int:
+    """
+    Returns an industry alignment score (0–20) based on standardized sector names.
+    Calibrated so sector weight = 20 points in the global 125-point model.
+    """
+
     if not resumen:
-        return 0
-    resumen = resumen.lower()
-    if any(k in resumen for k in ["aeroespacial", "energía", "automotriz", "manufactura"]):
-        return 10
-    return 0
+        return 5  # neutral midpoint
+
+    resumen = resumen.strip().lower()
+
+    # --- Core expertise (direct domain match) ---
+    if any(k in resumen for k in [
+        "energy / oil & gas", "power generation",
+        "chemicals", "materials", "mining", "metals",
+        "industrial manufacturing", "machinery", "automation",
+        "aerospace", "defense", "aviation", "space",
+        "automotive", "mobility", "transportation equipment"
+    ]):
+        return 20
+
+    # --- Strong adjacency (industrial / engineering DNA) ---
+    if any(k in resumen for k in [
+        "electrical", "electronics", "semiconductors",
+        "engineering", "construction", "infrastructure",
+        "logistics", "supply chain", "distribution", "transportation services"
+    ]):
+        return 16
+
+    # --- Strategic adjacency (relevant for procurement / transformation) ---
+    if any(k in resumen for k in [
+        "technology", "software", "automation software", "ai",
+        "consulting", "advisory", "professional services",
+        "environmental", "recycling", "sustainability", "waste management"
+    ]):
+        return 12
+
+    # --- Moderate relevance ---
+    if any(k in resumen for k in [
+        "finance", "banking", "investment", "insurance",
+        "real estate", "property", "construction materials"
+    ]):
+        return 8
+
+    # --- Low relevance (operational / consumer focus) ---
+    if any(k in resumen for k in [
+        "consumer", "retail", "fmcg", "apparel",
+        "food", "beverage", "agriculture", "processing",
+        "hospitality", "travel", "tourism", "leisure",
+        "healthcare", "medical", "pharmaceutical", "biotechnology",
+        "education", "government", "public", "ngo",
+        "marketing", "media", "advertising", "events"
+    ]):
+        return 4
+
+    # --- Unknown or mixed domains ---
+    if any(k in resumen for k in ["miscellaneous", "diversified", "unknown"]):
+        return 8
+
+    # --- Legacy Spanish support (for backward compatibility) ---
+    if any(k in resumen for k in [
+        "aeroespacial", "energía", "automotriz",
+        "manufactura", "industrial", "ingeniería"
+    ]):
+        return 20
+
+    return 5  # neutral default
 
 def puntaje_ubicacion(presencia, location):
     puntos = 0
@@ -66,8 +128,9 @@ def puntaje_recencia(fecha):
 # --- Calcular scoring ---
 def calcular_scoring():
     vacantes = fetch_all_vacantes_enriched()
+    results = []
 
-    for vac in vacantes:
+    for vac in tqdm(vacantes,desc='Scoring Vacantes', unit='vac'):
         
 
         score = 0
@@ -85,9 +148,20 @@ def calcular_scoring():
         elif score >= 60:   categoria = "🟡 Fit moderado"
         else:               categoria = "🔴 No relevante"
         
-        update_vacante_fields(vac['job_hash'], {
+        
+        # update_vacante_fields(vac['job_hash'], {
+        #     "score_total": score,
+        #     "categoria_fit": categoria
+        # })
+
+        results.append({
+            "job_hash": vac["job_hash"],
             "score_total": score,
             "categoria_fit": categoria
-        })
+            })
 
-    print("Scoring actualizado.")
+    # Convert to DataFrame and bulk update all at once
+    df_updates = pd.DataFrame(results, columns=["job_hash", "score_total", "categoria_fit"])
+    bulk_update_vacantes_df(df_updates)
+
+    print(f"✅ Scoring actualizado ({len(df_updates)} registros).")
