@@ -36,6 +36,7 @@ docker-compose.override.yml
 
 # Local testing / benchmarks
 # Benchmarks and local tests
+analyzer/
 analyzer/models_benchmark.py
 analyzer/ollama_benchmark_log.txt
 analyzer/*.txt
