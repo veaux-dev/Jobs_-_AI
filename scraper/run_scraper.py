@@ -1,10 +1,10 @@
 from jobspy import scrape_jobs
-import time, random
+import time, random, os, multiprocessing as mp
 import pandas as pd
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 from datetime import datetime, date
-from db_vacantes import insert_vacante, calculate_hash, finalize_scrape_run, init_db, set_db_path,log_scraper_run
+from db_vacantes import insert_vacantes, calculate_hash, finalize_scrape_run, init_db, set_db_path,log_scraper_run
 import zoneinfo
 from pathlib import Path
 import yaml
@@ -43,11 +43,13 @@ roles = config["roles"]
 functions = config["functions"]
 locations = config["locations"]
 
-def SCRAPYSCRAPY(job_title, job_location, job_country):
-    
+SCRAPE_TIMEOUT_S = int(os.getenv("SCRAPE_TIMEOUT_S", config.get("scrape_timeout_s", 900)))
+MAX_RUN_SECONDS = int(os.getenv("MAX_RUN_SECONDS", config.get("max_run_seconds", 6 * 3600)))
+
+def _scrape_worker(result_q, job_title, job_location, job_country, sites, linkedin_fetch_description):
     try:
         jobs = scrape_jobs(
-            site_name=["indeed", "linkedin", "zip_recruiter", "google","glassdoor", "bayt"], #, "bdjobs", "naukri"
+            site_name=sites,
             search_term=job_title,
             google_search_term=f"{job_title} jobs near {job_location} since yesterday",
             location=job_location,
@@ -55,14 +57,41 @@ def SCRAPYSCRAPY(job_title, job_location, job_country):
             hours_old=168,
             country_indeed=job_country,
             verbose=0,
-            linkedin_fetch_description=True # gets more info such as description, direct job url (slower)
+            linkedin_fetch_description=linkedin_fetch_description,
             # proxies=["208.195.175.46:65095", "208.195.175.45:65095", "localhost"],
         )
-        return jobs
+        result_q.put(("ok", jobs))
     except Exception as e:
-            # 👇 solo loguea y sigue con el loop
-            print(f"⚠️ Error en {job_location}/{job_country}: {e}")
-            return pd.DataFrame()
+        result_q.put(("err", f"{type(e).__name__}: {e}"))
+
+def SCRAPYSCRAPY(job_title, job_location, job_country):
+    sites = ["indeed", "linkedin", "zip_recruiter", "google", "glassdoor"]  # , "bdjobs", "naukri", "bayt"
+    scrape_start = time.monotonic()
+    result_q = mp.Queue()
+    proc = mp.Process(
+        target=_scrape_worker,
+        args=(result_q, job_title, job_location, job_country, sites, True),
+    )
+    proc.start()
+    proc.join(SCRAPE_TIMEOUT_S)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(10)
+        print(f"⚠️ Timeout en scrape_jobs({job_title} | {job_location}) after {SCRAPE_TIMEOUT_S}s")
+        return pd.DataFrame()
+
+    if not result_q.empty():
+        status, payload = result_q.get()
+        if status == "ok":
+            scrape_elapsed = time.monotonic() - scrape_start
+            print(f"[SCRAPER] scrape_jobs({job_title} | {job_location}) -> {len(payload)} rows in {scrape_elapsed:.2f}s")
+            return payload
+        print(f"⚠️ Error en {job_location}/{job_country}: {payload}")
+        return pd.DataFrame()
+
+    print(f"⚠️ Error en {job_location}/{job_country}: no result from worker")
+    return pd.DataFrame()
     
 # --- Helper: mapear output JobSpy → formato DB ---
 def map_jobspy_row(row, qry_title, qry_loc):
@@ -98,6 +127,7 @@ def clean_text(text):
 if __name__ == "__main__":
     
     start = datetime.now()
+    run_start_monotonic = time.monotonic()
     print(f"\n[SCRAPER] Started at {start.isoformat(sep=' ', timespec='seconds')}\n")
 
     all_jobs=[]
@@ -119,21 +149,27 @@ if __name__ == "__main__":
     init_db()
     total_new_jobs=0
 
+    stop_requested = False
     with tqdm(total=total_loops, desc="Scraping jobs") as pbar:
         for role in roles:
             for function in functions:
                 for location,country in loc_country:
+                    loop_start = time.monotonic()
                    
                     qry_title=f'{role} {function}'
                     qry_loc=f'{loc}'
 
+                    total_elapsed = time.monotonic() - run_start_monotonic
+                    if total_elapsed > MAX_RUN_SECONDS:
+                        print(f"[SCRAPER] Max runtime reached ({MAX_RUN_SECONDS}s). Stopping early.")
+                        stop_requested = True
+                        break
+
                     jobs_found=SCRAPYSCRAPY(f'{role} {function}', location, country)
 
                     if not jobs_found.empty:
-                        new_this_batch = 0
-                        for _, row in jobs_found.iterrows():
-                            vac = map_jobspy_row(row, qry_title, qry_loc)
-                            new_this_batch+=insert_vacante(vac)
+                        vacs = [map_jobspy_row(row, qry_title, qry_loc) for _, row in jobs_found.iterrows()]
+                        new_this_batch = insert_vacantes(vacs)
                         total_new_jobs+=new_this_batch
                         pbar.set_postfix({
                             "role": role,
@@ -152,8 +188,15 @@ if __name__ == "__main__":
                     
                     all_jobs.append(jobs_found)
                     
-                    time.sleep(random.randint(3, 6))
+                    sleep_s = random.randint(3, 6)
+                    time.sleep(sleep_s)
+                    loop_elapsed = time.monotonic() - loop_start
+                    print(f"[SCRAPER] loop {qry_title} | {location} finished in {loop_elapsed:.2f}s (sleep {sleep_s}s)")
                     pbar.update(1)
+                if stop_requested:
+                    break
+            if stop_requested:
+                break
 
     finalize_scrape_run()
 
@@ -164,4 +207,4 @@ if __name__ == "__main__":
 
     print(f"\n[SCRAPER] Finished at {end.isoformat(sep=' ', timespec='seconds')}")
     print(f"[SCRAPER] Duration: {duration}s")
-    print(f"[SCRAPER] New jobs this run: {total_new_jobs}/n")
+    print(f"[SCRAPER] New jobs this run: {total_new_jobs}\n")

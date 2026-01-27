@@ -27,9 +27,10 @@ DB_PATH = DATA_DIR / "vacantes.db"
 def _get_conn():
     if DB_PATH is None:
         raise RuntimeError("DB_PATH not set. Call set_db_path() first.")
-    conn = sqlite3.connect(DB_PATH, timeout=60)
-    conn.execute("PRAGMA journal_mode=WAL;")      # mejor concurrencia
-    conn.execute("PRAGMA synchronous = NORMAL;")  # balance seguro/rendimiento
+    timeout = int(os.getenv("SQLITE_TIMEOUT", "60"))
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=timeout)
+    conn.execute("PRAGMA busy_timeout = 60000;")
+    conn.execute("PRAGMA query_only = ON;")
     conn.execute("PRAGMA foreign_keys = ON;")     # por si metes claves foráneas
     return conn
 
