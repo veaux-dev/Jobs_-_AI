@@ -1,5 +1,6 @@
 import streamlit as st
 import sqlite3
+import time
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -169,6 +170,7 @@ st.title("📊 Visor de Vacantes Analizadas")
 
 # --- Filtros ---
 st.sidebar.header("Filtros")
+perf_mode = True
 score_min = st.sidebar.slider("Score mínimo", min_value=-1, max_value=120, value=85, step=5)
 filtro_lugar = st.sidebar.text_input("📍 Filtrar por lugar (puedes usar múltiples, separados por coma)").strip().lower()
 filtro_empresa = st.sidebar.text_input("🏢 Filtrar por empresa (puedes usar múltiples, separados por coma)").strip().lower()
@@ -204,10 +206,14 @@ if date_quick != "all":
 # --- Tabla SQL (filtros aplicados en DB) ---
 table_total_rows = None
 df_view = pd.DataFrame()
+perf = {} if perf_mode else None
 try:
+    t_conn = time.perf_counter() if perf_mode else None
     conn_table = _get_conn()
     vac_cols = _table_cols(conn_table, "vacantes")
     emp_cols = _table_cols(conn_table, "empresas")
+    if perf_mode:
+        perf["conn+cols_ms"] = int((time.perf_counter() - t_conn) * 1000)
     base_cols = [
         "score_total",
         "categoria_fit",
@@ -246,10 +252,23 @@ try:
         "fecha_ref": fecha_ref_db,
         "cutoff": cutoff.strftime("%Y-%m-%d") if cutoff is not None else None,
     }
+    t_where = time.perf_counter() if perf_mode else None
     where_sql, params = _build_where(filters, vac_cols, alias="v")
-
-    count_q = f"SELECT COUNT(*) FROM vacantes v {where_sql}"
-    table_total_rows = conn_table.execute(count_q, params).fetchone()[0]
+    if perf_mode:
+        perf["build_where_ms"] = int((time.perf_counter() - t_where) * 1000)
+    cutoff_key = filters.get("cutoff")
+    filters_key = (
+        score_min,
+        tuple(status_sel),
+        tuple(filtro_lugar_terms),
+        tuple(filtro_empresa_terms),
+        tuple(filtro_texto_terms),
+        date_quick,
+        cutoff_key,
+    )
+    if st.session_state.get("filters_key") != filters_key:
+        st.session_state["filters_key"] = filters_key
+        st.session_state["table_total_rows"] = None
 
     order_by = "v.score_total DESC" if "score_total" in vac_cols else "v.scraped_at DESC"
     offset = (st.session_state.get("page", 1) - 1) * page_size
@@ -262,7 +281,10 @@ try:
         LIMIT ? OFFSET ?
     """
     data_params = params + [page_size, offset]
+    t_query = time.perf_counter() if perf_mode else None
     df_view = pd.read_sql_query(data_q, conn_table, params=data_params)
+    if perf_mode:
+        perf["query_page_ms"] = int((time.perf_counter() - t_query) * 1000)
 finally:
     try:
         conn_table.close()
@@ -273,8 +295,11 @@ finally:
 sql_metrics = None
 sql_view = None
 try:
+    t_conn_m = time.perf_counter() if perf_mode else None
     conn_metrics = _get_conn()
     vac_cols = _table_cols(conn_metrics, "vacantes")
+    if perf_mode:
+        perf["metrics_conn+cols_ms"] = int((time.perf_counter() - t_conn_m) * 1000)
     # Totales
     total_q = """
         SELECT
@@ -287,8 +312,11 @@ try:
             AVG(score_total) AS avg_score
         FROM vacantes
     """
+    t_metrics = time.perf_counter() if perf_mode else None
     cur = conn_metrics.execute(total_q)
     sql_metrics = cur.fetchone()
+    if perf_mode:
+        perf["metrics_total_ms"] = int((time.perf_counter() - t_metrics) * 1000)
 
     # Filtros aplicados a DB completa (incluye score_min y filtros activos)
     filtro_lugar_terms = _terms_from_csv(filtro_lugar)
@@ -314,8 +342,11 @@ try:
         FROM vacantes v
         {where_sql}
     """
+    t_view = time.perf_counter() if perf_mode else None
     cur = conn_metrics.execute(view_q, params)
     sql_view = cur.fetchone()
+    if perf_mode:
+        perf["metrics_view_ms"] = int((time.perf_counter() - t_view) * 1000)
 
     # --- Métrica de antigüedad desde DB (solo no closed) ---
     fecha_ref_db = next((c for c in ["scraped_at", "date", "last_seen_on"] if c in vac_cols), None)
@@ -336,8 +367,11 @@ try:
             WHERE status != 'closed'
             GROUP BY bucket
         """
+        t_age = time.perf_counter() if perf_mode else None
         cur = conn_metrics.execute(age_q)
         sql_age_rows = cur.fetchall()
+        if perf_mode:
+            perf["metrics_age_ms"] = int((time.perf_counter() - t_age) * 1000)
     else:
         sql_age_rows = []
 finally:
@@ -427,18 +461,25 @@ with col_right:
 with col_left:
     st.markdown("<div class='debug-frame'>", unsafe_allow_html=True)
     st.markdown("**Vacantes filtradas**")
-    total_caption = table_total_rows if table_total_rows is not None else 0
-    st.caption(f"Mostrando {total_caption} vacantes con score >= {score_min}")
+    table_total_rows = st.session_state.get("table_total_rows")
+    if table_total_rows is None:
+        st.caption(f"Mostrando {len(df_view)} vacantes (total no calculado) • score >= {score_min}")
+    else:
+        st.caption(f"Mostrando {table_total_rows} vacantes con score >= {score_min}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-total_rows = table_total_rows if table_total_rows is not None else len(df_view)
-total_pages = max(1, (total_rows + page_size - 1) // page_size)
+total_rows = table_total_rows if table_total_rows is not None else None
+total_pages = max(1, (total_rows + page_size - 1) // page_size) if total_rows is not None else 1000
 page = st.sidebar.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1, key="page")
 start_idx = (page - 1) * page_size
-end_idx = start_idx + page_size
+end_idx = start_idx + len(df_view)
+t_replace = time.perf_counter() if perf_mode else None
 df_view = df_view.replace(r"\|", " ", regex=True)
+if perf_mode:
+    perf["replace_regex_ms"] = int((time.perf_counter() - t_replace) * 1000)
 
-st.caption(f"Página {page}/{total_pages} • filas {start_idx + 1}-{min(end_idx, total_rows)}")
+caption_total = total_rows if total_rows is not None else "?"
+st.caption(f"Página {page}/{total_pages} • filas {start_idx + 1}-{end_idx} de {caption_total}")
 if AgGrid is None or GridOptionsBuilder is None or JsCode is None:
     st.error("AgGrid no está instalado. Instala con: `pip install streamlit-aggrid`")
     st.dataframe(df_view, use_container_width=True)
@@ -461,6 +502,7 @@ else:
         }
         """
     )
+    t_grid = time.perf_counter() if perf_mode else None
     gb = GridOptionsBuilder.from_dataframe(df_view)
     gb.configure_default_column(filter=True, sortable=True, resizable=True)
     gb.configure_column("link", headerName="Link", cellRenderer=link_renderer, sortable=False, filter=False)
@@ -480,7 +522,10 @@ else:
     gb.configure_column("scraped_at", width=140)
     gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     grid_options = gb.build()
+    if perf_mode:
+        perf["grid_build_ms"] = int((time.perf_counter() - t_grid) * 1000)
 
+    t_render = time.perf_counter() if perf_mode else None
     AgGrid(
         df_view,
         gridOptions=grid_options,
@@ -489,15 +534,28 @@ else:
         columns_auto_size_mode="FIT_ALL_COLUMNS_TO_VIEW",
         allow_unsafe_jscode=True,
     )
+    if perf_mode:
+        perf["grid_render_ms"] = int((time.perf_counter() - t_render) * 1000)
 
-# --- Detalle expandible ---
-st.subheader("Detalle por vacante")
-for _, row in df_view.iterrows():
-    with st.expander(f"{row['title']} – {row['company']} [{row['score_total']}]"):
-        st.markdown(f"**Ubicación:** {row['location']}")
-        st.markdown(f"**Modalidad:** {row['modalidad_trabajo']}")
-        st.markdown(f"**Nivel estimado:** {row['nivel_estimado']}")
-        st.markdown(f"**Fit usuario:** {'✅' if row['es_fit_usuario'] else '❌'}")
-        st.markdown(f"**Es procurement:** {'✅' if row['es_procurement'] else '❌'}")
-        st.markdown("**Descripción completa:**")
-        st.text(row['job_description'] or row.get('full_text', 'Sin descripción'))
+# --- Conteo total (lento, diferido) ---
+if st.session_state.get("table_total_rows") is None:
+    with st.spinner("Calculando total de vacantes..."):
+        try:
+            conn_count = _get_conn()
+            count_q = f"SELECT COUNT(*) FROM vacantes v {where_sql}"
+            t_count = time.perf_counter() if perf_mode else None
+            st.session_state["table_total_rows"] = conn_count.execute(count_q, params).fetchone()[0]
+            if perf_mode:
+                perf["count_total_ms"] = int((time.perf_counter() - t_count) * 1000)
+        finally:
+            try:
+                conn_count.close()
+            except Exception:
+                pass
+
+if perf_mode and perf:
+    st.sidebar.subheader("Tiempos (ms)")
+    for k, v in perf.items():
+        st.sidebar.caption(f"{k}: {v}")
+    st.sidebar.caption(f"total_visible_ms: {sum(perf.values())}")
+

@@ -74,6 +74,18 @@ def init_db():
         )
     """)
 
+    # Índices para acelerar filtros/orden del visor
+    for stmt in [
+        "CREATE INDEX IF NOT EXISTS idx_vacantes_score_total ON vacantes(score_total)",
+        "CREATE INDEX IF NOT EXISTS idx_vacantes_status ON vacantes(status)",
+        "CREATE INDEX IF NOT EXISTS idx_vacantes_company ON vacantes(company)",
+        "CREATE INDEX IF NOT EXISTS idx_vacantes_scraped_at ON vacantes(scraped_at)",
+        "CREATE INDEX IF NOT EXISTS idx_vacantes_date ON vacantes(date)",
+        "CREATE INDEX IF NOT EXISTS idx_vacantes_last_seen_on ON vacantes(last_seen_on)",
+        "CREATE INDEX IF NOT EXISTS idx_empresas_company ON empresas(company)",
+    ]:
+        cursor.execute(stmt)
+
     conn.commit()
     conn.close()
 
