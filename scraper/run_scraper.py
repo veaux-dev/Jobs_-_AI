@@ -45,6 +45,8 @@ locations = config["locations"]
 
 SCRAPE_TIMEOUT_S = int(os.getenv("SCRAPE_TIMEOUT_S", config.get("scrape_timeout_s", 900)))
 MAX_RUN_SECONDS = int(os.getenv("MAX_RUN_SECONDS", config.get("max_run_seconds", 6 * 3600)))
+LOOP_SLEEP_MIN_S = int(os.getenv("LOOP_SLEEP_MIN_S", config.get("loop_sleep_min_s", 1)))
+LOOP_SLEEP_MAX_S = int(os.getenv("LOOP_SLEEP_MAX_S", config.get("loop_sleep_max_s", 2)))
 
 def _scrape_worker(result_q, job_title, job_location, job_country, sites, linkedin_fetch_description):
     try:
@@ -53,7 +55,7 @@ def _scrape_worker(result_q, job_title, job_location, job_country, sites, linked
             search_term=job_title,
             google_search_term=f"{job_title} jobs near {job_location} since yesterday",
             location=job_location,
-            results_wanted=50,
+            results_wanted=30,
             hours_old=168,
             country_indeed=job_country,
             verbose=0,
@@ -64,34 +66,74 @@ def _scrape_worker(result_q, job_title, job_location, job_country, sites, linked
     except Exception as e:
         result_q.put(("err", f"{type(e).__name__}: {e}"))
 
-def SCRAPYSCRAPY(job_title, job_location, job_country):
-    sites = ["indeed", "linkedin", "zip_recruiter", "google", "glassdoor"]  # , "bdjobs", "naukri", "bayt"
-    scrape_start = time.monotonic()
+def _scrape_site_worker(result_q, job_title, job_location, job_country, site, linkedin_fetch_description):
+    try:
+        jobs = scrape_jobs(
+            site_name=[site],
+            search_term=job_title,
+            google_search_term=f"{job_title} jobs near {job_location} since yesterday",
+            location=job_location,
+            results_wanted=0,
+            hours_old=168,
+            country_indeed=job_country,
+            verbose=0,
+            linkedin_fetch_description=linkedin_fetch_description,
+        )
+        result_q.put(("ok", jobs))
+    except Exception as e:
+        result_q.put(("err", f"{type(e).__name__}: {e}"))
+
+def _run_with_timeout(target, args, timeout_s, label):
     result_q = mp.Queue()
-    proc = mp.Process(
-        target=_scrape_worker,
-        args=(result_q, job_title, job_location, job_country, sites, True),
-    )
+    proc = mp.Process(target=target, args=(result_q, *args))
     proc.start()
-    proc.join(SCRAPE_TIMEOUT_S)
+    proc.join(timeout_s)
 
     if proc.is_alive():
         proc.terminate()
         proc.join(10)
-        print(f"⚠️ Timeout en scrape_jobs({job_title} | {job_location}) after {SCRAPE_TIMEOUT_S}s")
-        return pd.DataFrame()
+        print(f"⚠️ Timeout en {label} after {timeout_s}s", flush=True)
+        return None, f"timeout after {timeout_s}s"
 
     if not result_q.empty():
         status, payload = result_q.get()
         if status == "ok":
-            scrape_elapsed = time.monotonic() - scrape_start
-            print(f"[SCRAPER] scrape_jobs({job_title} | {job_location}) -> {len(payload)} rows in {scrape_elapsed:.2f}s")
-            return payload
-        print(f"⚠️ Error en {job_location}/{job_country}: {payload}")
-        return pd.DataFrame()
+            return payload, None
+        return None, payload
 
-    print(f"⚠️ Error en {job_location}/{job_country}: no result from worker")
-    return pd.DataFrame()
+    return None, "no result from worker"
+
+def SCRAPYSCRAPY(job_title, job_location, job_country):
+    sites = [ "linkedin", "google"]  # , "bdjobs", "naukri", "bayt" ,"zip_recruiter", "glassdoor","indeed"
+    scrape_start = time.monotonic()
+    frames = []
+
+    for site in sites:
+        label = f"scrape_jobs[{site}]({job_title} | {job_location})"
+        print(f"[SCRAPER] start {label}", flush=True)
+        df, err = _run_with_timeout(
+            _scrape_site_worker,
+            (job_title, job_location, job_country, site, True),
+            SCRAPE_TIMEOUT_S,
+            label,
+        )
+        if err:
+            print(f"⚠️ Error en {job_location}/{job_country} [{site}]: {err}", flush=True)
+            continue
+        if df is not None and not df.empty:
+            frames.append(df)
+            print(f"[SCRAPER] {label} -> {len(df)} rows", flush=True)
+        else:
+            print(f"[SCRAPER] {label} -> 0 rows", flush=True)
+
+    if frames:
+        jobs = pd.concat(frames, ignore_index=True)
+    else:
+        jobs = pd.DataFrame()
+
+    scrape_elapsed = time.monotonic() - scrape_start
+    print(f"[SCRAPER] scrape_jobs({job_title} | {job_location}) total -> {len(jobs)} rows in {scrape_elapsed:.2f}s", flush=True)
+    return jobs
     
 # --- Helper: mapear output JobSpy → formato DB ---
 def map_jobspy_row(row, qry_title, qry_loc):
@@ -188,7 +230,7 @@ if __name__ == "__main__":
                     
                     all_jobs.append(jobs_found)
                     
-                    sleep_s = random.randint(3, 6)
+                    sleep_s = random.randint(LOOP_SLEEP_MIN_S, LOOP_SLEEP_MAX_S)
                     time.sleep(sleep_s)
                     loop_elapsed = time.monotonic() - loop_start
                     print(f"[SCRAPER] loop {qry_title} | {location} finished in {loop_elapsed:.2f}s (sleep {sleep_s}s)")
