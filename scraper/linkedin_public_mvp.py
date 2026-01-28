@@ -34,7 +34,6 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 print(f"[MVP] DATA_DIR={DATA_DIR}")
 print(f"[MVP] DB_PATH={DB_PATH}")
 print(f"[MVP] CONFIG_PATH={CONFIG_PATH}")
-input("[MVP] Pause: confirma DB_PATH arriba y presiona Enter para continuar...")
 
 set_db_path(str(DB_PATH))
 
