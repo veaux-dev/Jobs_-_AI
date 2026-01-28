@@ -55,68 +55,83 @@ def _table_cols(conn, table: str) -> list[str]:
         return []
 
 
-# --- Cargar datos ---
-@st.cache_data(ttl=60)
-def cargar_datos():
-    conn = _get_conn()
-    view_limit = int(os.getenv("VISOR_LIMIT", "5000"))
-
-    vac_cols_wanted = [
-        "job_hash",
-        "qry_title",
-        "qry_loc",
-        "title",
-        "company",
-        "location",
-        "date",
-        "date_text",
-        "link",
-        "job_description",
-        "full_text",
-        "scraped_at",
-        "last_seen_on",
-        "status",
-        "modalidad_trabajo",
-        "tipo_contrato",
-        "salario_estimado",
-        "applicants_count",
-        "es_procurement",
-        "es_fit_usuario",
-        "nivel_estimado",
-        "score_total",
-        "categoria_fit",
-        "presencia_mexico",
-    ]
-    vac_cols = _table_cols(conn, "vacantes")
-    vac_select = [c for c in vac_cols_wanted if c in vac_cols] or ["rowid"]
-
-    vacantes = pd.read_sql_query(
-        f"SELECT {', '.join(vac_select)} FROM vacantes ORDER BY scraped_at DESC LIMIT {view_limit}",
-        conn,
-    )
-
-    emp_cols = _table_cols(conn, "empresas")
-    emp_wanted = ["company", "sector_empresa", "presencia_mexico"]
-    emp_select = [c for c in emp_wanted if c in emp_cols]
-    if emp_select:
-        empresas = pd.read_sql_query(f"SELECT {', '.join(emp_select)} FROM empresas", conn)
-    else:
-        empresas = pd.DataFrame()
-    conn.close()
-    fulldf = pd.merge(vacantes, empresas, on="company", how="left") if not empresas.empty else vacantes
-    return vacantes, empresas, fulldf
-
-def filtrar_con_keywords(df, columna, texto_raw):
-    if not texto_raw:
-        return df
-    keywords = [kw.strip() for kw in texto_raw.split(',') if kw.strip()]
-    patron = '|'.join(keywords)
-    return df[df[columna].fillna('').str.lower().str.contains(patron)]
+def _terms_from_csv(raw: str) -> list[str]:
+    return [t.strip().lower() for t in raw.split(",") if t.strip()]
 
 
+def _build_like_clause(col: str, terms: list[str], params: list[str]) -> str | None:
+    if not terms:
+        return None
+    parts = []
+    for term in terms:
+        parts.append(f"LOWER({col}) LIKE ?")
+        params.append(f"%{term}%")
+    return "(" + " OR ".join(parts) + ")"
 
-vacantes, empresas, fulldf = cargar_datos()
-full_metrics = os.getenv("VISOR_FULL_METRICS", "0") in {"1", "true", "True"}
+
+def _build_global_text_clause(cols: list[str], terms: list[str], params: list[str]) -> str | None:
+    if not terms or not cols:
+        return None
+    parts = []
+    for term in terms:
+        like_params = f"%{term}%"
+        for col in cols:
+            parts.append(f"LOWER({col}) LIKE ?")
+            params.append(like_params)
+    return "(" + " OR ".join(parts) + ")"
+
+
+def _build_where(filters: dict, available_cols: list[str], alias: str | None = None) -> tuple[str, list[str]]:
+    clauses: list[str] = []
+    params: list[str] = []
+
+    def col(name: str) -> str:
+        return f"{alias}.{name}" if alias else name
+
+    score_min = filters.get("score_min")
+    if score_min is not None and "score_total" in available_cols:
+        clauses.append(f"{col('score_total')} >= ?")
+        params.append(str(score_min))
+
+    status_sel = filters.get("status_sel") or []
+    if status_sel and "status" in available_cols:
+        placeholders = ", ".join("?" for _ in status_sel)
+        clauses.append(f"{col('status')} IN ({placeholders})")
+        params.extend(status_sel)
+
+    lugar_terms = filters.get("filtro_lugar_terms") or []
+    if lugar_terms and "location" in available_cols:
+        clause = _build_like_clause(col("location"), lugar_terms, params)
+        if clause:
+            clauses.append(clause)
+
+    empresa_terms = filters.get("filtro_empresa_terms") or []
+    if empresa_terms and "company" in available_cols:
+        clause = _build_like_clause(col("company"), empresa_terms, params)
+        if clause:
+            clauses.append(clause)
+
+    texto_terms = filters.get("filtro_texto_terms") or []
+    if texto_terms:
+        text_cols = [c for c in ["title", "company", "location"] if c in available_cols]
+        text_cols = [col(c) for c in text_cols]
+        clause = _build_global_text_clause(text_cols, texto_terms, params)
+        if clause:
+            clauses.append(clause)
+
+    date_quick = filters.get("date_quick")
+    fecha_ref = filters.get("fecha_ref")
+    cutoff = filters.get("cutoff")
+    if date_quick and date_quick != "all" and fecha_ref in available_cols and cutoff:
+        clauses.append(f"DATE({col(fecha_ref)}) >= DATE(?)")
+        params.append(cutoff)
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where_sql, params
+
+
+# --- Helpers for SQL filtering ---
+full_metrics = os.getenv("VISOR_FULL_METRICS", "1") in {"1", "true", "True"}
 
 # --- Título principal ---
 st.set_page_config(layout="wide")
@@ -171,17 +186,9 @@ date_quick = st.sidebar.radio(
 )
 
 
-# --- Aplicar filtros ---
-df_filtrado = fulldf.copy()
-df_filtrado["score_total"] = df_filtrado["score_total"].fillna(-1).astype(int) # asegurar columna score_total // para que no truene la viz si hay vacantes sin score.
-df_filtrado = df_filtrado[df_filtrado['score_total'] >= score_min]
-#df_filtrado = df_filtrado[df_filtrado['modalidad_trabajo'].isin(modalidad_filtro)]
-df_filtrado = filtrar_con_keywords(df_filtrado, 'location', filtro_lugar)
-df_filtrado = filtrar_con_keywords(df_filtrado, 'company', filtro_empresa)
-df_filtrado = df_filtrado[df_filtrado['status'].isin(status_sel)]
-fecha_ref = next((c for c in ["scraped_at", "date", "last_seen_on"] if c in df_filtrado.columns), None)
-if fecha_ref and date_quick != "all":
-    serie_fechas = pd.to_datetime(df_filtrado[fecha_ref], errors="coerce").dt.normalize()
+# --- Filtro de fecha (para SQL) ---
+cutoff = None
+if date_quick != "all":
     hoy = pd.Timestamp.today().normalize()
     if date_quick == "today":
         cutoff = hoy
@@ -193,29 +200,174 @@ if fecha_ref and date_quick != "all":
         cutoff = hoy - pd.Timedelta(days=hoy.weekday())
     elif date_quick == "last 2 weeks":
         cutoff = hoy - pd.Timedelta(days=13)
+
+# --- Tabla SQL (filtros aplicados en DB) ---
+table_total_rows = None
+df_view = pd.DataFrame()
+try:
+    conn_table = _get_conn()
+    vac_cols = _table_cols(conn_table, "vacantes")
+    emp_cols = _table_cols(conn_table, "empresas")
+    base_cols = [
+        "score_total",
+        "categoria_fit",
+        "status",
+        "title",
+        "company",
+        "sector_empresa",
+        "location",
+        "presencia_mexico",
+        "es_procurement",
+        "es_fit_usuario",
+        "nivel_estimado",
+        "link",
+        "scraped_at",
+    ]
+    select_cols_sql = []
+    for col_name in base_cols:
+        if col_name in vac_cols:
+            select_cols_sql.append(f"v.{col_name}")
+        elif col_name == "sector_empresa" and "sector_empresa" in emp_cols:
+            select_cols_sql.append("e.sector_empresa")
+        elif col_name == "presencia_mexico" and "presencia_mexico" in emp_cols:
+            select_cols_sql.append("e.presencia_mexico")
+
+    filtro_lugar_terms = _terms_from_csv(filtro_lugar)
+    filtro_empresa_terms = _terms_from_csv(filtro_empresa)
+    filtro_texto_terms = _terms_from_csv(filtro_texto)
+    fecha_ref_db = next((c for c in ["scraped_at", "date", "last_seen_on"] if c in vac_cols), None)
+    filters = {
+        "score_min": score_min,
+        "status_sel": status_sel,
+        "filtro_lugar_terms": filtro_lugar_terms,
+        "filtro_empresa_terms": filtro_empresa_terms,
+        "filtro_texto_terms": filtro_texto_terms,
+        "date_quick": date_quick,
+        "fecha_ref": fecha_ref_db,
+        "cutoff": cutoff.strftime("%Y-%m-%d") if cutoff is not None else None,
+    }
+    where_sql, params = _build_where(filters, vac_cols, alias="v")
+
+    count_q = f"SELECT COUNT(*) FROM vacantes v {where_sql}"
+    table_total_rows = conn_table.execute(count_q, params).fetchone()[0]
+
+    order_by = "v.score_total DESC" if "score_total" in vac_cols else "v.scraped_at DESC"
+    offset = (st.session_state.get("page", 1) - 1) * page_size
+    data_q = f"""
+        SELECT {', '.join(select_cols_sql)}
+        FROM vacantes v
+        LEFT JOIN empresas e ON v.company = e.company
+        {where_sql}
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+    """
+    data_params = params + [page_size, offset]
+    df_view = pd.read_sql_query(data_q, conn_table, params=data_params)
+finally:
+    try:
+        conn_table.close()
+    except Exception:
+        pass
+
+# --- Métricas SQL (totales y filtradas en DB completa) ---
+sql_metrics = None
+sql_view = None
+try:
+    conn_metrics = _get_conn()
+    vac_cols = _table_cols(conn_metrics, "vacantes")
+    # Totales
+    total_q = """
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN status='new' THEN 1 ELSE 0 END) AS new_cnt,
+            SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active_cnt,
+            SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) AS closed_cnt,
+            SUM(CASE WHEN score_total IS NULL THEN 1 ELSE 0 END) AS unanalyzed_cnt,
+            COUNT(DISTINCT company) AS empresas_cnt,
+            AVG(score_total) AS avg_score
+        FROM vacantes
+    """
+    cur = conn_metrics.execute(total_q)
+    sql_metrics = cur.fetchone()
+
+    # Filtros aplicados a DB completa (incluye score_min y filtros activos)
+    filtro_lugar_terms = _terms_from_csv(filtro_lugar)
+    filtro_empresa_terms = _terms_from_csv(filtro_empresa)
+    filtro_texto_terms = _terms_from_csv(filtro_texto)
+    filters = {
+        "score_min": score_min,
+        "status_sel": status_sel,
+        "filtro_lugar_terms": filtro_lugar_terms,
+        "filtro_empresa_terms": filtro_empresa_terms,
+        "filtro_texto_terms": filtro_texto_terms,
+        "date_quick": date_quick,
+        "fecha_ref": next((c for c in ["scraped_at", "date", "last_seen_on"] if c in vac_cols), None),
+        "cutoff": cutoff.strftime("%Y-%m-%d") if cutoff is not None else None,
+    }
+    where_sql, params = _build_where(filters, vac_cols, alias="v")
+    view_q = f"""
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN status='new' THEN 1 ELSE 0 END) AS new_cnt,
+            SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active_cnt,
+            SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) AS closed_cnt
+        FROM vacantes v
+        {where_sql}
+    """
+    cur = conn_metrics.execute(view_q, params)
+    sql_view = cur.fetchone()
+
+    # --- Métrica de antigüedad desde DB (solo no closed) ---
+    fecha_ref_db = next((c for c in ["scraped_at", "date", "last_seen_on"] if c in vac_cols), None)
+    if fecha_ref_db:
+        age_q = f"""
+            SELECT
+                CASE
+                    WHEN {fecha_ref_db} IS NULL THEN 'Unknown'
+                    WHEN CAST(julianday('now') - julianday({fecha_ref_db}) AS INT) = 0 THEN 'New'
+                    WHEN CAST(julianday('now') - julianday({fecha_ref_db}) AS INT) BETWEEN 1 AND 7 THEN 'One week old'
+                    WHEN CAST(julianday('now') - julianday({fecha_ref_db}) AS INT) BETWEEN 8 AND 14 THEN '2 weeks old'
+                    WHEN CAST(julianday('now') - julianday({fecha_ref_db}) AS INT) BETWEEN 15 AND 30 THEN 'One month old'
+                    WHEN CAST(julianday('now') - julianday({fecha_ref_db}) AS INT) BETWEEN 31 AND 60 THEN '2 months old'
+                    ELSE 'Older'
+                END AS bucket,
+                COUNT(*) AS cnt
+            FROM vacantes
+            WHERE status != 'closed'
+            GROUP BY bucket
+        """
+        cur = conn_metrics.execute(age_q)
+        sql_age_rows = cur.fetchall()
     else:
-        cutoff = None
-    if cutoff is not None:
-        df_filtrado = df_filtrado[serie_fechas >= cutoff]
+        sql_age_rows = []
+finally:
+    try:
+        conn_metrics.close()
+    except Exception:
+        pass
 
 # layout principal: columna izquierda (4/5) y derecha (1/5)
 col_left, col_right = st.columns([4, 1], vertical_alignment="top")
 
-def count_status(df, s):
-    return int((df.get("status") == s).sum()) if "status" in df.columns else 0
-
 with col_left:
     st.markdown("<div class='debug-frame'>", unsafe_allow_html=True)
     if full_metrics:
-        conn = _get_conn()
-        total_vac = conn.execute("SELECT COUNT(*) FROM vacantes").fetchone()[0]
-        total_emp = conn.execute("SELECT COUNT(DISTINCT company) FROM vacantes").fetchone()[0]
-        avg_score = conn.execute("SELECT AVG(score_total) FROM vacantes").fetchone()[0]
-        new_db = conn.execute("SELECT COUNT(*) FROM vacantes WHERE status='new'").fetchone()[0]
-        active_db = conn.execute("SELECT COUNT(*) FROM vacantes WHERE status='active'").fetchone()[0]
-        closed_db = conn.execute("SELECT COUNT(*) FROM vacantes WHERE status='closed'").fetchone()[0]
-        unanalyzed_db = conn.execute("SELECT COUNT(*) FROM vacantes WHERE score_total IS NULL").fetchone()[0]
-        conn.close()
+        if sql_metrics:
+            total_vac = sql_metrics[0] or 0
+            new_db = sql_metrics[1] or 0
+            active_db = sql_metrics[2] or 0
+            closed_db = sql_metrics[3] or 0
+            unanalyzed_db = sql_metrics[4] or 0
+            total_emp = sql_metrics[5] or 0
+            avg_score = sql_metrics[6]
+        else:
+            total_vac = 0
+            total_emp = 0
+            avg_score = None
+            new_db = 0
+            active_db = 0
+            closed_db = 0
+            unanalyzed_db = 0
         st.markdown(
             f"<div class='metrics-line'>DB: {total_vac} vacantes • {total_emp} empresas • "
             f"score {round(avg_score,1) if avg_score is not None else '-'} • "
@@ -224,53 +376,40 @@ with col_left:
             unsafe_allow_html=True,
         )
     else:
-        unanalyzed_view = int(fulldf["score_total"].isna().sum()) if "score_total" in fulldf.columns else 0
         st.markdown(
-            f"<div class='metrics-line'>DB(vista): {len(fulldf)} vacantes • "
-            f"{fulldf['company'].nunique() if 'company' in fulldf.columns else 0} empresas • "
-            f"score {round(fulldf['score_total'].mean(),1) if 'score_total' in fulldf.columns else '-'} • "
-            f"New {count_status(fulldf, 'new')} • Active {count_status(fulldf, 'active')} • Closed {count_status(fulldf, 'closed')} • "
-            f"Sin analizar {unanalyzed_view}</div>",
+            "<div class='metrics-line'>DB(vista): 0 vacantes • 0 empresas • score - • "
+            "New 0 • Active 0 • Closed 0 • Sin analizar 0</div>",
             unsafe_allow_html=True,
         )
 
-    st.markdown(
-        f"<div class='metrics-line'>Vista: {len(df_filtrado)} total • "
-        f"New {count_status(df_filtrado, 'new')} • "
-        f"Active {count_status(df_filtrado, 'active')} • "
-        f"Closed {count_status(df_filtrado, 'closed')}</div>",
-        unsafe_allow_html=True,
-    )
+    if sql_view:
+        st.markdown(
+            f"<div class='metrics-line'>Vista (filtros, DB): {sql_view[0] or 0} total • "
+            f"New {sql_view[1] or 0} • "
+            f"Active {sql_view[2] or 0} • "
+            f"Closed {sql_view[3] or 0}</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div class='metrics-line'>Vista (filtros, DB): 0 total • New 0 • Active 0 • Closed 0</div>",
+            unsafe_allow_html=True,
+        )
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===== Gráfica en columna derecha =====
-fecha_ref = next((c for c in ["first_seen_at", "date", "scraped_at"] if c in df_filtrado.columns), None)
 with col_right:
     st.markdown("<div class='debug-frame'>", unsafe_allow_html=True)
-    if fecha_ref:
-        tmp = df_filtrado[[fecha_ref]].copy()
-        tmp[fecha_ref] = pd.to_datetime(tmp[fecha_ref], errors="coerce").dt.normalize()
-        hoy = pd.Timestamp.today().normalize()
-        delta = (hoy - tmp[fecha_ref])
-        tmp["age_days"] = pd.to_timedelta(delta).dt.days
-
-        def bucketize(d):
-            if pd.isna(d): return "Unknown"
-            if d == 0: return "New"
-            if 1 <= d <= 7: return "One week old"
-            if 8 <= d <= 14: return "2 weeks old"
-            if 15 <= d <= 30: return "One month old"
-            if 31 <= d <= 60: return "2 months old"
-            return "Older"
-
-        order = ["New","One week old","2 weeks old","One month old","2 months old","Older","Unknown"]
-        tmp["age_bucket"] = tmp["age_days"].apply(bucketize)
-        counts = tmp["age_bucket"].value_counts().reindex(order, fill_value=0)
-
+    if "sql_age_rows" in locals() and sql_age_rows:
+        order = ["New", "One week old", "2 weeks old", "One month old", "2 months old", "Older", "Unknown"]
+        counts = {k: 0 for k in order}
+        for bucket, cnt in sql_age_rows:
+            if bucket in counts:
+                counts[bucket] = cnt
         fig, ax = plt.subplots(figsize=(2.6, 1.8))
         colors = ["#2a9d8f", "#4ea8de", "#6c757d", "#f4a261", "#e76f51", "#adb5bd", "#c0c0c0"]
-        ax.barh(counts.index.tolist(), counts.to_numpy(), color=colors[: len(counts)])
-        ax.set_title("Antigüedad", fontsize=9, pad=2)
+        ax.barh(list(counts.keys()), list(counts.values()), color=colors[: len(counts)])
+        ax.set_title("Antigüedad (no closed)", fontsize=9, pad=2)
         ax.set_xlabel("")
         ax.set_ylabel("")
         ax.tick_params(axis="y", labelsize=6)
@@ -279,6 +418,8 @@ with col_right:
         for spine in ["top", "right", "left"]:
             ax.spines[spine].set_visible(False)
         st.pyplot(fig, use_container_width=True)
+    else:
+        st.caption("Sin datos de antigüedad.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Tabla de resultados ---
@@ -286,43 +427,15 @@ with col_right:
 with col_left:
     st.markdown("<div class='debug-frame'>", unsafe_allow_html=True)
     st.markdown("**Vacantes filtradas**")
-    st.caption(f"Mostrando {len(df_filtrado)} vacantes con score >= {score_min}")
+    total_caption = table_total_rows if table_total_rows is not None else 0
+    st.caption(f"Mostrando {total_caption} vacantes con score >= {score_min}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-df_detail = df_filtrado.copy()
-columnas_mostrar = [
-    "score_total",
-    "categoria_fit",
-    "status",
-    "title",
-    "company",
-    "sector_empresa",
-    "scraped_at",
-    "location",
-    "presencia_mexico",
-    "es_procurement",
-    "es_fit_usuario",
-    "nivel_estimado",
-    "link",
-]
-
-df_table = df_detail[columnas_mostrar].sort_values(by="score_total", ascending=False)
-if filtro_texto:
-    texto = filtro_texto.lower()
-    mask = (
-        df_table[columnas_mostrar]
-        .astype(str)
-        .apply(lambda s: s.str.lower().str.contains(texto, na=False))
-        .any(axis=1)
-    )
-    df_table = df_table[mask]
-
-total_rows = len(df_table)
+total_rows = table_total_rows if table_total_rows is not None else len(df_view)
 total_pages = max(1, (total_rows + page_size - 1) // page_size)
-page = st.sidebar.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1)
+page = st.sidebar.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1, key="page")
 start_idx = (page - 1) * page_size
 end_idx = start_idx + page_size
-df_view = df_table.iloc[start_idx:end_idx]
 df_view = df_view.replace(r"\|", " ", regex=True)
 
 st.caption(f"Página {page}/{total_pages} • filas {start_idx + 1}-{min(end_idx, total_rows)}")
@@ -352,6 +465,19 @@ else:
     gb.configure_default_column(filter=True, sortable=True, resizable=True)
     gb.configure_column("link", headerName="Link", cellRenderer=link_renderer, sortable=False, filter=False)
     gb.configure_column("score_total", sort="desc")
+    gb.configure_column("score_total", width=90)
+    gb.configure_column("categoria_fit", width=140)
+    gb.configure_column("status", width=110)
+    gb.configure_column("title", width=260)
+    gb.configure_column("company", width=180)
+    gb.configure_column("sector_empresa", width=160)
+    gb.configure_column("location", width=180)
+    gb.configure_column("presencia_mexico", width=140)
+    gb.configure_column("es_procurement", width=130)
+    gb.configure_column("es_fit_usuario", width=120)
+    gb.configure_column("nivel_estimado", width=130)
+    gb.configure_column("link", width=90)
+    gb.configure_column("scraped_at", width=140)
     gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     grid_options = gb.build()
 
@@ -360,12 +486,13 @@ else:
         gridOptions=grid_options,
         height=900 if st.session_state.grid_fullscreen else 600,
         fit_columns_on_grid_load=True,
+        columns_auto_size_mode="FIT_ALL_COLUMNS_TO_VIEW",
         allow_unsafe_jscode=True,
     )
 
 # --- Detalle expandible ---
 st.subheader("Detalle por vacante")
-for _, row in df_detail.iterrows():
+for _, row in df_view.iterrows():
     with st.expander(f"{row['title']} – {row['company']} [{row['score_total']}]"):
         st.markdown(f"**Ubicación:** {row['location']}")
         st.markdown(f"**Modalidad:** {row['modalidad_trabajo']}")
