@@ -20,6 +20,9 @@ RUN pip install --no-cache-dir -r /app/scraper/requirements.txt
 # Copiamos todo el proyecto
 COPY . /app
 
+# Forzar permisos de ejecución para el script de entrada
+RUN chmod +x /app/scraper/docker_entrypoint_bil.sh
+
 # Por defecto trabajamos en scraper para tu pipeline original
 WORKDIR /app/scraper
 

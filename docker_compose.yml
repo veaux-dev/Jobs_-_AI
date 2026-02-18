@@ -14,6 +14,7 @@ services:
     restart: no
 
   scraper_bil:
+    # Reutiliza el build del primer servicio
     build:
       context: .
       dockerfile: scraper/Dockerfile
