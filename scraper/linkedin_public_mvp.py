@@ -83,6 +83,7 @@ def safe_request(url, params=None, method="GET", session=None):
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            print(f"   [HTTP] {method} {url} (Intento {attempt+1}/{max_retries})...", flush=True)
             if method == "GET":
                 resp = session.get(url, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
             else:
@@ -90,7 +91,7 @@ def safe_request(url, params=None, method="GET", session=None):
             
             if resp.status_code == 429:
                 wait_time = (attempt + 1) * 300 # 5, 10, 15 minutos
-                print(f"\n⚠️ HTTP 429 detectado. LinkedIn nos bloqueó. Esperando {wait_time/60} min para reintentar...")
+                print(f"\n🛑 [ERROR 429] LinkedIn detectó tráfico de bot. Entrando en enfriamiento: {wait_time/60} min...", flush=True)
                 time.sleep(wait_time)
                 continue
             
@@ -210,6 +211,7 @@ if __name__ == "__main__":
             for function in functions:
                 for location, _ in loc_country:
                     qry_title = f"{role} {function}".strip()
+                    print(f"\n🚀 [MVP] Iniciando búsqueda: '{qry_title}' en '{location}'...", flush=True)
                     try:
                         rows = fetch_linkedin_public(qry_title, location, pages=LI_PAGES)
                         vacs = []
