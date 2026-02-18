@@ -13,13 +13,14 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-COPY scraper/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiamos primero los requerimientos para usar el cache de Docker
+COPY scraper/requirements.txt /app/scraper/requirements.txt
+RUN pip install --no-cache-dir -r /app/scraper/requirements.txt
 
-# Copy everything from the project root
-COPY . .
+# Copiamos todo el proyecto
+COPY . /app
 
-# Cambiamos al directorio del scraper para que los imports relativos funcionen
+# Por defecto trabajamos en scraper para tu pipeline original
 WORKDIR /app/scraper
 
 CMD ["python", "linkedin_public_mvp.py"]

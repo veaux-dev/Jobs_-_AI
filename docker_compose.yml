@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: scraper/Dockerfile
+    image: jobspy_shared_image:latest
     container_name: jobspy_scraper
     volumes:
       - ${DATA_PATH:-./data}:/app/data
@@ -14,16 +15,16 @@ services:
     restart: no
 
   scraper_bil:
-    build:
-      context: .
-      dockerfile: scraper/Dockerfile
+    image: jobspy_shared_image:latest
+    depends_on:
+      - scraper
     container_name: jobspy_scraper_bil
     volumes:
       - ${DATA_PATH:-./data}:/app/data
     environment:
-      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
-      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
-      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-}
     command: ["/app/scraper/docker_entrypoint_bil.sh"]
     restart: no
 
