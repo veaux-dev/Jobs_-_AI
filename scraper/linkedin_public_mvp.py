@@ -12,7 +12,9 @@ from tqdm import tqdm
 import yaml
 import zoneinfo
 
-from db_vacantes import insert_vacantes, calculate_hash, set_db_path
+from db_vacantes import insert_vacantes, calculate_hash, set_db_path, init_db
+
+import argparse
 
 # --- Configuración ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,8 +27,19 @@ DATA_DIR = next((p for p in candidates if p.exists()), None)
 if DATA_DIR is None:
     raise FileNotFoundError("No se encontró carpeta data en ninguna ruta candidata.")
 
-DB_PATH = DATA_DIR / "vacantes.db"
-CONFIG_PATH = DATA_DIR / "config_scraper.yaml"
+# Configuración de argumentos
+parser = argparse.ArgumentParser(description="Run the LinkedIn Public MVP job scraper.")
+parser.add_argument("--profile", type=str, help="Profile name (e.g. 'bil'). If provided, automatically sets config and db paths.")
+parser.add_argument("--config", type=Path, help="Path to the configuration YAML file.")
+parser.add_argument("--db", type=Path, help="Path to the SQLite database file.")
+args = parser.parse_args()
+
+if args.profile:
+    CONFIG_PATH = DATA_DIR / f"config_{args.profile}.yaml"
+    DB_PATH = DATA_DIR / f"vacantes_{args.profile}.db"
+else:
+    CONFIG_PATH = args.config if args.config else DATA_DIR / "config_scraper.yaml"
+    DB_PATH = args.db if args.db else DATA_DIR / "vacantes.db"
 
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
@@ -48,7 +61,7 @@ REQUEST_TIMEOUT = int(os.getenv("LI_TIMEOUT", "20"))
 FETCH_DETAIL = os.getenv("LI_FETCH_DETAIL", "1") not in {"0", "false", "False"}
 DETAIL_SLEEP_MIN = int(os.getenv("LI_DETAIL_SLEEP_MIN", "1"))
 DETAIL_SLEEP_MAX = int(os.getenv("LI_DETAIL_SLEEP_MAX", "3"))
-WRITE_DB = os.getenv("LI_WRITE_DB", "0") in {"1", "true", "True"}
+WRITE_DB = os.getenv("LI_WRITE_DB", "1") in {"1", "true", "True"} # Defaulted to 1 for convenience
 
 USER_AGENT = os.getenv(
     "LI_USER_AGENT",
@@ -212,6 +225,8 @@ if __name__ == "__main__":
     start = datetime.now()
     print(f"\n[MVP] Started at {start.isoformat(sep=' ', timespec='seconds')}\n")
 
+    init_db()
+
     loc_country = []
     for loc in locations:
         if "," in loc:
@@ -220,6 +235,7 @@ if __name__ == "__main__":
         else:
             loc_country.append((loc, loc))
 
+    total_inserted = 0
     total_loops = len(roles) * len(functions) * len(loc_country)
     with tqdm(total=total_loops, desc="Scraping LinkedIn public") as pbar:
         for role in roles:
@@ -250,6 +266,7 @@ if __name__ == "__main__":
 
                     if WRITE_DB and vacs:
                         inserted = insert_vacantes(vacs)
+                        total_inserted += inserted
                         print(f"[MVP] DB insert: {inserted} new rows")
 
                     pbar.set_postfix(
@@ -257,6 +274,10 @@ if __name__ == "__main__":
                     )
 
                     pbar.update(1)
+
+    # Write total to a temp file for the entrypoint script
+    with open("/tmp/new_jobs_count.txt", "w") as f:
+        f.write(str(total_inserted))
 
     end = datetime.now()
     duration = int((end - start).total_seconds())

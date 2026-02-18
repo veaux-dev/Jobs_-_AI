@@ -74,6 +74,23 @@ def init_db():
         )
     """)
 
+    # Tabla de registro de corridas (Pipeline tracking)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pipeline_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            new_jobs_found INTEGER,
+            duration_01_scraper INTEGER,
+            duration_02_extract INTEGER,
+            duration_03_enrich INTEGER,
+            duration_04_classify INTEGER,
+            duration_05_scoring INTEGER,
+            total_duration INTEGER,
+            total_jobs_db INTEGER,
+            total_companies_db INTEGER
+        )
+    """)
+
     # Índices para acelerar filtros/orden del visor
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_vacantes_score_total ON vacantes(score_total)",

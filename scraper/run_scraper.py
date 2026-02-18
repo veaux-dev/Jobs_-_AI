@@ -9,6 +9,7 @@ import zoneinfo
 from pathlib import Path
 import yaml
 
+import argparse
 # --- Configuración ---
 
 # 1. Punto de partida: carpeta donde está este script
@@ -24,9 +25,22 @@ DATA_DIR = next((p for p in candidates if p.exists()), None)
 if DATA_DIR is None:
     raise FileNotFoundError("No se encontró carpeta data en ninguna ruta candidata.")
 
+# Configuración de argumentos
+parser = argparse.ArgumentParser(description="Run the job scraper.")
+parser.add_argument("--profile", type=str, help="Profile name (e.g. 'bil'). If provided, automatically sets config and db paths.")
+parser.add_argument("--config", type=Path, help="Path to the configuration YAML file.")
+parser.add_argument("--db", type=Path, help="Path to the SQLite database file.")
+args = parser.parse_args()
+
+if args.profile:
+    CONFIG_PATH = DATA_DIR / f"config_{args.profile}.yaml"
+    DB_PATH = DATA_DIR / f"vacantes_{args.profile}.db"
+else:
+    CONFIG_PATH = args.config if args.config else DATA_DIR / "config_scraper.yaml"
+    DB_PATH = args.db if args.db else DATA_DIR / "vacantes.db"
+
 # 3. Rutas absolutas que siempre serán BASE/DATA/...
-DB_PATH = DATA_DIR / "vacantes.db"
-CONFIG_PATH = DATA_DIR / "config_scraper.yaml"
+# (Removed previous assignment to use the logic above)
 
 MX = zoneinfo.ZoneInfo("America/Monterrey")
 
@@ -53,10 +67,9 @@ def _scrape_worker(result_q, job_title, job_location, job_country, sites, linked
         jobs = scrape_jobs(
             site_name=sites,
             search_term=job_title,
-            google_search_term=f"{job_title} jobs near {job_location} since yesterday",
+            google_search_term=f"{job_title} jobs in {job_location}",
             location=job_location,
             results_wanted=30,
-            hours_old=168,
             country_indeed=job_country,
             verbose=0,
             linkedin_fetch_description=linkedin_fetch_description,
@@ -71,10 +84,9 @@ def _scrape_site_worker(result_q, job_title, job_location, job_country, site, li
         jobs = scrape_jobs(
             site_name=[site],
             search_term=job_title,
-            google_search_term=f"{job_title} jobs near {job_location} since yesterday",
+            google_search_term=f"{job_title} jobs in {job_location}",
             location=job_location,
             results_wanted=0,
-            hours_old=168,
             country_indeed=job_country,
             verbose=0,
             linkedin_fetch_description=linkedin_fetch_description,

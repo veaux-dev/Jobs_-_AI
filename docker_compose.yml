@@ -3,13 +3,28 @@ version: "3.9"
 services:
   scraper:
     build:
-      context: ./scraper
+      context: .
+      dockerfile: scraper/Dockerfile
     container_name: jobspy_scraper
     volumes:
       - ${DATA_PATH:-./data}:/app/data
     environment:
       - PYTHONUNBUFFERED=1
       - LI_WRITE_DB=1
+    restart: no
+
+  scraper_bil:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+    container_name: jobspy_scraper_bil
+    volumes:
+      - ${DATA_PATH:-./data}:/app/data
+    environment:
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+    command: ["/app/scraper/docker_entrypoint_bil.sh"]
     restart: no
 
   frontend:
