@@ -9,9 +9,12 @@ services:
     container_name: jobspy_scraper
     volumes:
       - ${DATA_PATH:-./data}:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
       - PYTHONUNBUFFERED=1
       - LI_WRITE_DB=1
+      - TZ=America/Monterrey
     restart: no
 
   scraper_bil:
@@ -22,10 +25,13 @@ services:
     container_name: jobspy_scraper_bil
     volumes:
       - ${DATA_PATH:-./data}:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
       - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-}
+      - TZ=America/Monterrey
     command: ["/app/scraper/docker_entrypoint_bil.sh"]
     restart: no
 
@@ -37,6 +43,8 @@ services:
       - "8501:8501"
     volumes:
       - ${DATA_PATH:-./data}:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
       - PYTHONUNBUFFERED=1
       - STREAMLIT_SERVER_HEADLESS=true
@@ -45,5 +53,5 @@ services:
       - VISOR_VIEW_ROWS=1000
       - VISOR_FULL_METRICS=1
       - SQLITE_TIMEOUT=60
-    # Quitamos el depends_on para que el frontend no fuerce el arranque del scraper
+      - TZ=America/Monterrey
     restart: unless-stopped
